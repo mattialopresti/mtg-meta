@@ -44,7 +44,9 @@ and `MTGStatsAdvanced` to `window`, and in Node `require()` works. Dependencies 
 `i18n ← core ← melee`, `core ← advanced ← viewer ← admin`. There is no build step and no runtime dependency.
 
 Scripts are registered in `register_assets()`. WordPress enqueues `viewer.js` and its dependencies only on pages
-that contain the shortcode, and `admin.js` only on the plugin's admin page.
+that contain the shortcode, and `admin.js` only on the plugin's admin page. Each asset's version string is the
+plugin version followed by the file's modification time (`?ver=1.0.0.<mtime>`). Browsers and caching plugins
+therefore pick up updated files right after an upgrade, even when the plugin version number does not change.
 
 ## Data flow
 
@@ -89,10 +91,24 @@ results (equilibrium, variants, the rating model) are memoized until the selecti
 
 - that color becomes `--mtgs-page`, used for the sticky bar, popovers and the side panel;
 - its luminance decides light or dark mode when `theme="auto"`;
+- if no element declares a background, the page is treated as white, which is what the browser paints. The only
+  exception is a page that opts into a dark `color-scheme` while the visitor's system is in dark mode. The visitor's
+  dark-mode setting alone never darkens the dashboard on a light site;
 - the accent color comes from `data-accent`, then the theme's `--wp--preset--color--primary` (or `accent`). It is
   discarded when its contrast with the page is too low.
 
-Greys, lines and tinted surfaces are derived from `currentColor` with `color-mix()`, so they suit any palette. Every
+Greys, lines and tinted surfaces are derived from `currentColor` with `color-mix()`, so they suit any palette:
+
+| Token | Mix of the text color | Used for |
+|---|---|---|
+| `--mtgs-fg-2` | 84% | secondary text, chart values |
+| `--mtgs-fg-3` | 70% | captions, axis labels, notes |
+| `--mtgs-line` | 18% | borders, grid lines |
+| `--mtgs-line-strong` | 32% | control borders, muted bars |
+| `--mtgs-fill` / `--mtgs-fill-2` | 5% / 11% | section backgrounds, hover and segmented controls |
+
+On a dark page the same percentages move the greys toward the light text color, so contrast stays the same in both
+modes. To make the greys darker or lighter, change these six values in `viewer.css`. Every
 selector in `viewer.css` is prefixed with `.mtgs`, and a scoped reset neutralizes the theme's global rules for
 buttons, lists and tables.
 

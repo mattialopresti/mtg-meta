@@ -254,6 +254,8 @@ The **Metagame** tab also exports the full archetype table. Files are UTF-8 with
 | Many *unrecognized* decks in a fresh format | A new set introduced archetypes that the community rules do not cover yet. Add a custom rule or fix the decks by hand. |
 | Odd color names such as *WBRG Ponza* | Colors count both lands and spells, sideboard included, as in the original parser. Use an alias. |
 | Wrong rules for an old Standard event | Rules are cached per format. Use *Reload community rules on the next import*, then reclassify. |
+| The dashboard still looks like an older version after an update | Asset URLs change on every update, so this usually means a page cache. Clear your caching plugin or CDN cache once, then reload with Ctrl+F5. |
+| The dashboard is dark on a light site | Your theme probably paints its background on an element that does not contain the shortcode. Add `theme="light"` to the shortcode. |
 | Dashboard colors clash with the site | Set *Custom accent color* in the options, or `accent="#…"` in the shortcode. If the page background is an image or a gradient, set `theme="light"` or `theme="dark"`. |
 | Wrong interface language | The language follows the WordPress site language. Force it with `lang="en"` or `lang="it"`. |
 | Direct Melee import fails | Check that the event is public and that your server can reach `melee.gg`. If Melee changed its site, the importer needs updating; please open an issue. |
