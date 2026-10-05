@@ -1,0 +1,44 @@
+# Italian translation for MTG Stats (PHP strings; the dashboard and admin panel use assets/i18n.js).
+msgid ""
+msgstr ""
+"Project-Id-Version: MTG Stats 1.0.0\n"
+"Language: it_IT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Domain: mtgstats\n"
+
+#. Plugin description
+msgid "Metagame analytics for Magic: The Gathering tournaments. Imports events from Melee (directly or through MTGODecklistCache), detects archetypes automatically and publishes a dashboard with the [mtgstats] shortcode."
+msgstr "Statistiche di metagame per i tornei di Magic: The Gathering. Importa eventi da Melee (direttamente o tramite MTGODecklistCache), riconosce gli archetipi in automatico e pubblica un dashboard con lo shortcode [mtgstats]."
+
+msgid "Invalid tournament ID"
+msgstr "ID torneo non valido"
+
+msgid "Invalid tournament structure"
+msgstr "Struttura del torneo non valida"
+
+msgid "Could not write the file in uploads/mtgstats"
+msgstr "Impossibile scrivere il file in uploads/mtgstats"
+
+msgid "Could not update index.json"
+msgstr "Impossibile aggiornare index.json"
+
+msgid "Invalid rules"
+msgstr "Regole non valide"
+
+msgid "Could not save the rules"
+msgstr "Impossibile salvare le regole"
+
+msgid "Path not allowed"
+msgstr "Percorso non consentito"
+
+msgid "Enable JavaScript to see the statistics."
+msgstr "Per vedere le statistiche abilita JavaScript."
+
+msgid "Loading…"
+msgstr "Caricamento…"
+
+msgid "Manage"
+msgstr "Gestisci"
