@@ -45,7 +45,7 @@ and `MTGStatsAdvanced` to `window`, and in Node `require()` works. Dependencies 
 
 Scripts are registered in `register_assets()`. WordPress enqueues `viewer.js` and its dependencies only on pages
 that contain the shortcode, and `admin.js` only on the plugin's admin page. Each asset's version string is the
-plugin version followed by the file's modification time (`?ver=1.0.0.<mtime>`). Browsers and caching plugins
+plugin version followed by the file's modification time (`?ver=1.10.26.<mtime>`). Browsers and caching plugins
 therefore pick up updated files right after an upgrade, even when the plugin version number does not change.
 
 ## Data flow
@@ -54,7 +54,8 @@ therefore pick up updated files right after an upgrade, even when the plugin ver
 
 ```
 admin.js
-  ├─ GitHub API: list Tournaments/<source>/<year>/<month>   (2 calls: month dir, then its tree)
+  ├─ GitHub API: list Tournaments/<source>/<year>/<month>   (2 calls: month dir, then its tree;
+  │                                     repository and folder per source in core.CACHE_SOURCES)
   ├─ raw.githubusercontent.com: download the event JSON
   ├─ core.compactFromCache()          → compact tournament (no archetypes yet)
   ├─ getBundle(format)                → uploads/mtgstats/rules/<format>.json if newer than 7 days,

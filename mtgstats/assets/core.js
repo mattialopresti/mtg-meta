@@ -20,6 +20,17 @@
   var CACHE_REPO = 'Jiliac/MTGODecklistCache';
   var CACHE_BRANCH = 'master';
 
+  // Fonti della cache. MTGO arriva dal fork fbettega/MTG_decklistcache, l'unico che lo aggiorna ancora.
+  // file = schema del nome: 'id-date' (nome-id-data), 'date-id' (slug mtgo.com: nome-dataid), 'date' (nome-data)
+  // until = ultimo mese pubblicato, per le fonti non piu aggiornate
+  var CACHE_SOURCES = [
+    { key: 'melee.gg', repo: CACHE_REPO, branch: CACHE_BRANCH, dir: 'melee.gg', file: 'id-date' },
+    { key: 'mtgo.com', repo: 'fbettega/MTG_decklistcache', branch: 'main', dir: 'MTGO', file: 'date-id' },
+    { key: 'CardsRealm', repo: CACHE_REPO, branch: CACHE_BRANCH, dir: 'CardsRealm', file: 'id-date' },
+    { key: 'topdeck.gg', repo: CACHE_REPO, branch: CACHE_BRANCH, dir: 'topdeck.gg', file: 'date', until: '2025-04' },
+    { key: 'manatraders.com', repo: CACHE_REPO, branch: CACHE_BRANCH, dir: 'manatraders.com', file: 'date', until: '2024-11' }
+  ];
+
   // Traduzione dei messaggi mostrati nel pannello admin (MTGStatsI18n e presente solo nel browser)
   var tr = function (s, v) { var I = typeof self !== 'undefined' && self.MTGStatsI18n; return I ? I.t(s, v) : s.replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] !== undefined ? v[k] : m; }); };
 
@@ -387,31 +398,58 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Cache tornei (Jiliac/MTGODecklistCache)
+  // Cache tornei (Jiliac/MTGODecklistCache, fbettega/MTG_decklistcache)
   // ---------------------------------------------------------------------------
 
-  /** Elenca i tornei di un mese: source = 'melee.gg' | 'CardsRealm' | ... */
+  /** Nome, ID e data dal nome file; null se non segue lo schema della fonte */
+  function parseCacheFile(file, scheme) {
+    var m;
+    if (scheme === 'date-id') {
+      // La data nello slug di mtgo.com non e affidabile (lo stesso evento compare con due slug): si usa la cartella
+      m = file.match(/^(.*)-\d{4}-\d{2}-\d{2}(\d+)\.json$/);
+      return m && { title: m[1], id: m[2], date: null };
+    }
+    if (scheme === 'date') {
+      // Nessun ID: identifica l'evento con lo slug del nome
+      m = file.match(/^(.*)-(\d{4}-\d{2}-\d{2})\.json$/);
+      return m && { title: m[1], id: slugify(m[1]).slice(0, 40), date: m[2] };
+    }
+    m = file.match(/^(.*?)-(\d+)-(\d{4}-\d{2}-\d{2})\.json$/);
+    return m && { title: m[1], id: m[2], date: m[3] };
+  }
+
+  /** Elenca i tornei di un mese: source = una chiave di CACHE_SOURCES ('melee.gg', 'mtgo.com', ...) */
   async function listCacheMonth(http, source, year, month) {
+    var src = CACHE_SOURCES.filter(function (s) { return s.key === source; })[0] ||
+      { key: source, repo: CACHE_REPO, branch: CACHE_BRANCH, dir: source, file: 'id-date' };
     var mm = String(month).padStart(2, '0');
-    var base = 'https://api.github.com/repos/' + CACHE_REPO + '/contents/Tournaments/' + source + '/' + year;
-    var months = await http.json(base + '?ref=' + CACHE_BRANCH);
+    var folder = 'Tournaments/' + src.dir + '/' + year + '/' + mm + '/';
+    var months = await http.json('https://api.github.com/repos/' + src.repo + '/contents/Tournaments/' + src.dir + '/' + year + '?ref=' + src.branch);
     var dir = months.filter(function (m) { return m.name === mm; })[0];
     if (!dir) return [];
-    var tree = await http.json('https://api.github.com/repos/' + CACHE_REPO + '/git/trees/' + dir.sha + '?recursive=1');
+    var tree = await http.json('https://api.github.com/repos/' + src.repo + '/git/trees/' + dir.sha + '?recursive=1');
+    var seen = new Set();
     return tree.tree.filter(function (t) { return t.type === 'blob' && /\.json$/.test(t.path); }).map(function (t) {
       var file = t.path.split('/').pop();
-      var m = file.match(/^(.*?)-(\d+)-(\d{4}-\d{2}-\d{2})\.json$/);
+      var m = parseCacheFile(file, src.file);
       return {
-        path: 'Tournaments/' + source + '/' + year + '/' + mm + '/' + t.path,
-        url: 'https://raw.githubusercontent.com/' + CACHE_REPO + '/' + CACHE_BRANCH + '/Tournaments/' + source + '/' + year + '/' + mm + '/' + t.path,
+        path: folder + t.path,
+        url: 'https://raw.githubusercontent.com/' + src.repo + '/' + src.branch + '/' + folder + t.path,
         file: file,
-        title: (m ? m[1] : file.replace(/\.json$/, '')).replace(/-/g, ' '),
-        sourceId: m ? m[2] : null,
-        date: m ? m[3] : year + '-' + mm + '-' + t.path.split('/')[0],
+        title: (m ? m.title : file.replace(/\.json$/, '')).replace(/-/g, ' '),
+        sourceId: m ? m.id : null,
+        date: (m && m.date) || year + '-' + mm + '-' + t.path.split('/')[0],
         size: t.size,
         source: source
       };
-    }).sort(function (a, b) { return b.date.localeCompare(a.date) || b.size - a.size; });
+    }).sort(function (a, b) { return b.date.localeCompare(a.date) || b.size - a.size; }).filter(function (it) {
+      // Stesso evento pubblicato con due slug su mtgo.com: tiene solo il primo
+      if (src.file !== 'date-id' || !it.sourceId) return true;
+      var k = it.sourceId + '|' + it.date;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   }
 
   var KNOWN_FORMATS = ['Standard', 'Pioneer', 'Modern', 'Legacy', 'Vintage', 'Pauper', 'Premodern', 'Commander', 'Explorer', 'Historic', 'Timeless', 'Alchemy'];
@@ -557,8 +595,10 @@
   // Statistiche
   // ---------------------------------------------------------------------------
 
+  var PLAYOFF_NAME = /quarter|semi|final|top ?\d|playoff/i;
+
   function isPlayoffRound(r, playersInRound) {
-    return /quarter|semi|final|top ?\d|playoff/i.test(r.name || '') || playersInRound <= 8;
+    return PLAYOFF_NAME.test(r.name || '') || playersInRound <= 8;
   }
 
   /**
@@ -590,9 +630,20 @@
       var struct = roundStructure(t);
       var rec = t.players.map(function () { return { w: 0, l: 0, d: 0, played: 0, rounds: new Set() }; });
       var hasMatches = t.rounds && t.rounds.some(function (r) { return r.m && r.m.length; });
+      // Solo i round del top cut (es. Challenge MTGO): il record viene dalla classifica, che include anche il top
+      // cut; i round esclusi vengono sottratti
+      var cutOnly = hasMatches && t.rounds.every(function (r) { return PLAYOFF_NAME.test(r.name || ''); }) &&
+        t.players.some(function (p) { return p.w !== undefined; });
+      var skip = t.players.map(function () { return { w: 0, l: 0, d: 0 }; });
       t.rounds.forEach(function (r, ri) {
-        if (r.ex) return;
-        if (opts.excludePlayoffs && struct.playoff[ri]) return;
+        if (r.ex || (opts.excludePlayoffs && struct.playoff[ri])) {
+          if (cutOnly) r.m.forEach(function (m) {
+            if (m[1] < 0) return;
+            var a = skip[m[0]], b = skip[m[1]];
+            if (m[2] > m[3]) { a.w++; b.l++; } else if (m[2] < m[3]) { a.l++; b.w++; } else { a.d++; b.d++; }
+          });
+          return;
+        }
         r.m.forEach(function (m) {
           var a = rec[m[0]];
           if (a) a.rounds.add(ri);
@@ -604,14 +655,16 @@
         });
       });
       t.players.forEach(function (p, pi) {
-        var r = rec[pi];
-        var useStand = !hasMatches;
+        var r = rec[pi], s = skip[pi];
+        var useStand = !hasMatches || (cutOnly && p.w !== undefined);
         if (useStand && p.w === undefined && !p.res) return;
         if (!useStand && r.played === 0 && !p.mb) return;
         rows.push({
           t: ti, tid: t.id, date: t.date, pi: pi, player: p.n, archetype: p.a || 'Unknown', color: p.col || '',
           hasList: !!(p.mb && p.mb.length),
-          w: useStand ? (p.w || 0) : r.w, l: useStand ? (p.l || 0) : r.l, d: useStand ? (p.d || 0) : r.d,
+          w: useStand ? Math.max(0, (p.w || 0) - s.w) : r.w,
+          l: useStand ? Math.max(0, (p.l || 0) - s.l) : r.l,
+          d: useStand ? Math.max(0, (p.d || 0) - s.d) : r.d,
           rank: p.rank || null,
           day2: struct.day2Start >= 0 ? r.rounds.has(struct.day2Start) : null
         });
@@ -806,7 +859,7 @@
   }
 
   return {
-    version: '1.0.0',
+    version: '1.10.26',
     normCardName: normCardName,
     parseLenientJson: parseLenientJson,
     slugify: slugify,
@@ -819,6 +872,7 @@
     pickFormatFolder: pickFormatFolder,
     loadFormatBundle: loadFormatBundle,
     enrichColorsFromScryfall: enrichColorsFromScryfall,
+    CACHE_SOURCES: CACHE_SOURCES,
     listCacheMonth: listCacheMonth,
     compactFromCache: compactFromCache,
     classifyTournament: classifyTournament,

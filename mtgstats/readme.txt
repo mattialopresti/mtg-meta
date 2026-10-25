@@ -3,7 +3,7 @@ Contributors: mattialopresti
 Tags: magic the gathering, mtg, metagame, tournament, statistics
 Requires at least: 5.8
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.10.26
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -13,7 +13,7 @@ Metagame analytics for Magic: The Gathering tournaments. Import events from Mele
 
 MTG Stats turns Melee tournament results into a metagame dashboard on your site.
 
-* Import events from MTGODecklistCache (browse by month, bulk import) or directly from a melee.gg URL.
+* Import events from MTGODecklistCache (melee.gg, MTGO, CardsRealm; browse by month, bulk import) or directly from a melee.gg URL.
 * Archetypes are detected from decklists with the community rules of MTGOFormatData (a port of MTGOArchetypeParser).
 * Aliases, custom rules and manual overrides.
 * Dashboard tabs: metagame share and smoothed win rates; matchup matrix (observed or Bayesian); expected win rate against a field and equilibrium metagame; trends; Day 2 / Top N conversion; average decklist, variants and card impact; players and a deck-or-pilot model; CSV export.
@@ -36,7 +36,7 @@ Shortcode attributes: format, days, tournaments, tabs (meta, mu, pos, trend, con
 
 This plugin connects to third-party services only when an administrator imports tournaments from the plugin's admin page. The site's visitors never contact them.
 
-* GitHub (api.github.com, raw.githubusercontent.com): lists and downloads tournament files from the public MTGODecklistCache repository and archetype rules from MTGOFormatData. Requests come from the administrator's browser. Terms: https://docs.github.com/site-policy/github-terms/github-terms-of-service - Privacy: https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement
+* GitHub (api.github.com, raw.githubusercontent.com): lists and downloads tournament files from the public MTGODecklistCache and MTG_decklistcache repositories and archetype rules from MTGOFormatData. Requests come from the administrator's browser. Terms: https://docs.github.com/site-policy/github-terms/github-terms-of-service - Privacy: https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement
 * Scryfall (api.scryfall.com): sends the names of cards whose colors are unknown, to retrieve their colors. Requests come from the administrator's browser. Terms: https://scryfall.com/docs/terms - Privacy: https://scryfall.com/docs/privacy
 * Melee (melee.gg): downloads public tournament pages, pairings, standings and decklists when the administrator uses the direct import. Requests come from the site's server. Terms: https://melee.gg/Policy/Terms - Privacy: https://melee.gg/Policy/Privacy
 
@@ -51,6 +51,10 @@ In wp-content/uploads/mtgstats/: index.json, one JSON file per tournament, and a
 Fix it on the tournament's review page, add an alias or a custom rule in "Archetipi e regole", then reclassify. Rules that are wrong for everyone should be fixed upstream in MTGOFormatData.
 
 == Changelog ==
+
+= 1.10.26 =
+* New cache sources: MTGO (from the fbettega/MTG_decklistcache fork), plus the topdeck.gg and Manatraders archives.
+* Fixed: MTGO Challenges, which publish only the top 8 pairings, take player records from the standings.
 
 = 1.0.0 =
 * First public release.

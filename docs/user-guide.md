@@ -29,7 +29,7 @@ event.
 
 ## Installing
 
-1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.0.0.zip`, then click **Install Now** and **Activate**.
+1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.10.26.zip`, then click **Install Now** and **Activate**.
 2. A new **MTG Stats** entry appears in the admin menu.
 3. Tournament data is stored in `wp-content/uploads/mtgstats/`, so uninstalling the plugin does not delete it.
 
@@ -45,8 +45,17 @@ Open **MTG Stats → Import**.
 ### From the cache (recommended)
 
 The **From MTGODecklistCache** panel lists events collected every day by the public
-[MTGODecklistCache](https://github.com/Jiliac/MTGODecklistCache) project. Each event comes with standings,
-pairings for every round and all decklists. New events usually appear the day after they end.
+[MTGODecklistCache](https://github.com/Jiliac/MTGODecklistCache) project. MTGO events come from its
+[fbettega/MTG_decklistcache](https://github.com/fbettega/MTG_decklistcache) fork, the only one that still collects
+them. Each event comes with standings, pairings for every round and all decklists. New events usually appear the day
+after they end.
+
+| Source | What it contains |
+|---|---|
+| `melee.gg` | Standings, pairings for every round, decklists |
+| `mtgo.com` | **Challenges**: standings with full records, top 8 pairings only, decklists. **Leagues**: 5-0 decklists only, so their win rates are inflated |
+| `CardsRealm` | Local events, mostly from Brazil |
+| `topdeck.gg`, `manatraders.com` | Archives: no longer updated (until April 2025 and November 2024) |
 
 1. Choose the **Source** (usually `melee.gg`) and the **Month**.
 2. Click **Search tournaments**.

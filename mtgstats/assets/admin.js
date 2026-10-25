@@ -208,9 +208,10 @@
 
     // --- From the cache
     var p1 = panel(t('From MTGODecklistCache (recommended)'),
-      t('Melee tournaments collected every day by the public Jiliac/MTGODecklistCache project: standings, round-by-round pairings and decklists. An event usually shows up the day after it ends.'));
-    var sourceSel = h('select', {}, [['melee.gg', 'melee.gg'], ['CardsRealm', 'CardsRealm']].map(function (o) {
-      return h('option', { value: o[0], selected: o[0] === cacheState.source, text: o[1] });
+      t('Tournaments collected every day by public community projects (Jiliac/MTGODecklistCache, and fbettega/MTG_decklistcache for MTGO): standings, pairings and decklists. An event usually shows up the day after it ends. MTGO Challenges only include the top 8 pairings, and MTGO Leagues only publish 5-0 decklists, which inflates their win rates.'));
+    var sourceSel = h('select', {}, Core.CACHE_SOURCES.map(function (s) {
+      var label = s.until ? t('{source} (archive, until {month})', { source: s.key, month: s.until.split('-').reverse().join('/') }) : s.key;
+      return h('option', { value: s.key, selected: s.key === cacheState.source, text: label });
     }));
     var monthInp = h('input', { type: 'month', value: cacheState.month });
     var searchBtn = h('button', { type: 'button', class: 'button', text: t('Search tournaments') });

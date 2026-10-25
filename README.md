@@ -17,7 +17,9 @@ link to a published matchup matrix in a few minutes.
 
 **Data import**
 - Browse MTGODecklistCache by month, filter by name or format, and import events in bulk. Each event comes with
-  standings, round-by-round pairings and full decklists.
+  standings, round-by-round pairings and full decklists. Sources: melee.gg, MTGO (Challenges, Leagues and other
+  events, from the [fbettega/MTG_decklistcache](https://github.com/fbettega/MTG_decklistcache) fork), CardsRealm,
+  and the topdeck.gg and Manatraders archives.
 - Import any public Melee tournament from its URL. Rounds in a different format, such as the draft rounds at a
   Pro Tour, are excluded automatically.
 - CSV export of standings, matches and decklists.
@@ -70,7 +72,7 @@ link to a published matchup matrix in a few minutes.
 
 ## Installation
 
-1. Download `mtgstats-1.0.0.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
+1. Download `mtgstats-1.10.26.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**, choose the zip, then click **Install** and **Activate**.
 3. Open **MTG Stats** in the admin menu. On the **Import** tab, pick a month, click **Search tournaments** and import a
    few events.
@@ -131,7 +133,10 @@ from the web server.
 - **Data sources are run by volunteers.** MTGODecklistCache and MTGOFormatData are community projects. If the
   cache stops, direct Melee import still works. If Melee changes its pages,
   [`melee.js`](mtgstats/assets/melee.js) needs updating.
-- **MTGO.** The cache no longer carries recent MTGO events.
+- **MTGO.** Challenges only publish the top 8 pairings, so they add little to the matchup matrix; their records come
+  from the standings. Leagues only publish 5-0 decklists: they show what is played, but their win rates are
+  inflated.
+- **topdeck.gg and Manatraders** are no longer updated in the cache (last events in April 2025 and November 2024).
 - **Formats without community rules** (Premodern, Commander, …) fall back to the deck names players declared on
   Melee, plus your aliases and manual fixes.
 - **Player identity is name-based.** Namesakes merge, and players whose name is spelled differently split.

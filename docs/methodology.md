@@ -96,7 +96,9 @@ least one case the detector was right and the player had declared the wrong deck
 ## Records and win rates
 
 A player's match record is recomputed from the pairings whenever pairings exist. Only standings are used otherwise,
-for example in leagues that publish only final records. Recomputing makes the record consistent with the round
+for example in leagues that publish only final records. Events whose only rounds are the top cut, such as MTGO
+Challenges, are a third case: the record comes from the standings, which already include the top cut, and the
+results of any excluded rounds are subtracted from it. Recomputing makes the record consistent with the round
 filters:
 
 - a match is won by whoever won more games; equal games make a draw;

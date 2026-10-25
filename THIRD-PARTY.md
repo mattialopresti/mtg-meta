@@ -39,12 +39,13 @@ downloads it when importing. Its use is subject to each source's own terms.
 |---|---|---|
 | [MTGOFormatData](https://github.com/Badaro/MTGOFormatData) | Archetype rules, fallbacks, card colors | Badaro, Jiliac and contributors |
 | [MTGODecklistCache](https://github.com/Jiliac/MTGODecklistCache) | Tournament results, pairings and decklists collected from Melee and other sites | Jiliac (fork of Badaro's original) |
+| [MTG_decklistcache](https://github.com/fbettega/MTG_decklistcache) | MTGO tournament results and decklists, in the same format | fbettega |
 | [melee.gg](https://melee.gg) | Public tournament pages (direct import) | Melee |
 | [Scryfall API](https://scryfall.com/docs/api) | Colors and types of cards missing from the rule data | Scryfall |
 
 When using these sources:
 
-- **MTGOFormatData and MTGODecklistCache** do not declare a license. They are used as their maintainers intend,
+- **MTGOFormatData, MTGODecklistCache and MTG_decklistcache** do not declare a license. They are used as their maintainers intend,
   as input for metagame analysis, and no copy of their data is included in this repository.
 - **Scryfall** asks API users to keep request rates reasonable. The plugin sends at most one batch of 75 cards every
   120 ms, and only for cards it cannot find in MTGOFormatData. See the

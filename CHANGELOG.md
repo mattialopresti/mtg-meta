@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.26] - 2026-10-25
+
+### Import
+- New cache sources: MTGO (from the fbettega/MTG_decklistcache fork, which still collects it), plus the topdeck.gg
+  and Manatraders archives.
+- MTGO events published twice under different links are listed once, dated by the cache folder.
+
+### Fixed
+- Events whose only rounds are the top cut (MTGO Challenges) take records from the standings, minus any excluded
+  round. Before, players outside the top 8 counted as 0-0.
+
 ## [1.0.0] - 2026-10-05
 
 First public release.
@@ -39,4 +50,5 @@ First public release.
 - English and Italian interface (dashboard, admin panel and server messages), following the site language or the
   `lang` shortcode attribute, with localized number and date formatting.
 
+[1.10.26]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.10.26
 [1.0.0]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.0.0

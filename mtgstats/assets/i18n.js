@@ -348,8 +348,9 @@
 
     // Admin: import
     'From MTGODecklistCache (recommended)': 'Dalla cache MTGODecklistCache (consigliato)',
-    'Melee tournaments collected every day by the public Jiliac/MTGODecklistCache project: standings, round-by-round pairings and decklists. An event usually shows up the day after it ends.':
-      'Tornei Melee raccolti ogni giorno dal progetto pubblico Jiliac/MTGODecklistCache: classifiche, abbinamenti turno per turno e decklist. Di solito un evento compare il giorno dopo.',
+    'Tournaments collected every day by public community projects (Jiliac/MTGODecklistCache, and fbettega/MTG_decklistcache for MTGO): standings, pairings and decklists. An event usually shows up the day after it ends. MTGO Challenges only include the top 8 pairings, and MTGO Leagues only publish 5-0 decklists, which inflates their win rates.':
+      'Tornei raccolti ogni giorno da progetti pubblici della community (Jiliac/MTGODecklistCache e, per MTGO, fbettega/MTG_decklistcache): classifiche, abbinamenti e decklist. Di solito un evento compare il giorno dopo. Le Challenge MTGO hanno gli abbinamenti solo per la top 8, e le League MTGO pubblicano solo le liste 5-0, il che ne gonfia il winrate.',
+    '{source} (archive, until {month})': '{source} (archivio, fino a {month})',
     'Search tournaments': 'Cerca tornei',
     'Filter by name…': 'Filtra per nome…',
     'All formats': 'Tutti i formati',
