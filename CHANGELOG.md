@@ -4,6 +4,42 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.2026.1] - 2026-10-26
+
+### Archetype detection
+- Supplementary rules shipped with the plugin (`assets/rules-extra.json`) for archetypes missing from the community
+  rules, found in September-October 2026 events. They apply only when no community rule matches. Examples: Jund
+  Sacrifice, Boros Dwarves, Dimir Uldaros, Izzet Fling and Azorius Artifacts (Standard); Devoted Combo, Affinity, Loki,
+  Hollow One and Esper Ketramose (Modern); Tempo variants and Mystic Forge Combo (Legacy); Jeskai Lurrus, Natural Order
+  and Midrange (Vintage); Sacrifice and Control (Pioneer); Pestilence (Pauper). On those events, the share of decks
+  unrecognized or matched only by similarity dropped from 39.6% to 20.7% in Standard and from 12.7% to 2.7% in Modern.
+- New formats: Duel Commander, Centurion and Limited. The event name refines the source's format, so a Duel Commander
+  event filed as Commander, or a Premodern event (detected as Modern before), gets the right format.
+- In formats without community rules, house and supplementary rules now apply before the declared deck names.
+
+### House rules (formerly custom rules)
+- Visual editor: archetype name, format, color prefix and conditions in plain words, with Scryfall card suggestions and
+  spelling checks. Pasting a list adds one card per line.
+- **Test on saved tournaments** shows which decks a rule takes and how they are classified now.
+- List of saved house rules with format, definition and status (active, off, ignored because of errors, with the
+  errors), plus switch on/off, edit and delete. Import from JSON files, download as JSON, and a JSON editor for bulk
+  changes and variants.
+- Archetype catalog per format: house, community, supplementary and similarity archetypes with their definitions and
+  the date of the community rules, a search by archetype or card, **Update community rules now**, and **Customize** to
+  start a house rule from any archetype.
+- After saving rules or aliases, the panel offers to reclassify the saved tournaments.
+
+### Admin
+- Select-all checkboxes in the import list and in the saved tournaments, which can also be filtered by name and
+  format. Saved tournaments are reclassified or deleted in bulk.
+
+### Fixed
+- House rules that silently matched nothing: condition types are accepted in any letter case, card names ignore case,
+  accents and the back face of double-faced cards, and a single-card condition with several cards now requires all of
+  them instead of only the first. Invalid rules are shown with their errors instead of being dropped.
+- House rule names written with spaces, hyphens or digits ("Mono-Green Devotion") are displayed as written.
+- The server no longer discards incomplete house rules without telling, and keeps only the rule fields.
+
 ## [1.10.26] - 2026-10-25
 
 ### Import
@@ -50,5 +86,6 @@ First public release.
 - English and Italian interface (dashboard, admin panel and server messages), following the site language or the
   `lang` shortcode attribute, with localized number and date formatting.
 
+[1.10.2026.1]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.10.2026.1
 [1.10.26]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.10.26
 [1.0.0]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.0.0

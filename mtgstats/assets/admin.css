@@ -27,3 +27,32 @@
 .mtgsa-badge.is-manual { background: #edfaef; color: #00450c; }
 .mtgsa-deckrow pre { margin: 0; padding: 8px 12px; background: #f6f7f7; columns: 2 220px; font-size: 12px; white-space: pre-wrap; }
 .mtgsa-panel .mtgstats-app { border: 1px solid #dcdcde; }
+.mtgsa-badge.is-custom, .mtgsa-badge.is-extra { background: #f0f6fc; color: #0a4b78; }
+.mtgsa-notice { margin: 0 0 16px; }
+.mtgsa-notice .mtgsa-log { margin: 8px 0; }
+.mtgsa-editor { border: 1px solid #c3c4c7; border-left: 4px solid #2271b1; border-radius: 4px; padding: 4px 16px 12px; margin: 8px 0 16px; background: #f6f7f7; }
+.mtgsa-editor h3 { margin: 12px 0 4px; font-size: 14px; }
+.mtgsa-conds { display: grid; gap: 8px; margin: 8px 0; }
+.mtgsa-cond { display: grid; grid-template-columns: minmax(200px, 260px) 1fr auto; gap: 8px; align-items: start; }
+.mtgsa-cond select { max-width: 100%; }
+.mtgsa-cond-x { padding-top: 6px !important; color: #b32d2e !important; }
+.mtgsa-cardpicker { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 30px; padding: 3px 6px; background: #fff; border: 1px solid #8c8f94; border-radius: 4px; cursor: text; }
+.mtgsa-cardpicker:focus-within { border-color: #2271b1; box-shadow: 0 0 0 1px #2271b1; }
+.mtgsa-cardchips { display: contents; }
+.mtgsa-cardchip { display: inline-flex; align-items: center; gap: 2px; background: #f0f6fc; border: 1px solid #c5d9ed; border-radius: 12px; padding: 0 2px 0 10px; font-size: 12px; line-height: 22px; }
+.mtgsa-cardchip.is-bad { background: #fcf0f1; border-color: #d63638; color: #8a2424; }
+.mtgsa-cardchip.is-warn { background: #fcf9e8; border-color: #dba617; cursor: pointer; }
+.mtgsa-chip-x { border: 0; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; color: inherit; border-radius: 10px; }
+.mtgsa-chip-x:hover { background: rgba(0, 0, 0, .08); }
+.mtgsa-cardinput { flex: 1 1 180px; min-width: 160px; border: 0 !important; box-shadow: none !important; background: transparent !important; padding: 0 4px !important; min-height: 24px !important; }
+.mtgsa-errors { color: #b32d2e; }
+.mtgsa-errors p { margin: 2px 0; }
+.mtgsa-test:not(:empty) { margin: 0 0 16px; padding: 8px 12px; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; }
+.mtgsa-test summary, .mtgsa-json summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
+.mtgsa-narrow { width: auto; min-width: 360px; margin-bottom: 8px; }
+.mtgsa-row-off td, .mtgsa-row-off th:not(.check-column) { opacity: .6; }
+.mtgsa-row-bad { background: #fcf0f1 !important; }
+.mtgsa-json { margin-top: 16px; }
+.mtgsa-catinfo p { margin: 4px 0; color: #50575e; }
+.mtgsa-catalog { max-height: 560px; }
+@media (max-width: 782px) { .mtgsa-cond { grid-template-columns: 1fr; } }

@@ -109,12 +109,38 @@
     try { await wp('POST', '/rules/' + key, copy); } catch (e) { /* the local copy is only an optimization */ }
   }
 
-  function makeParser(bundle, format) {
+  // Supplementary rules shipped with the plugin (assets/rules-extra.json): archetypes the community rules do not cover yet
+  var extrasPromise = null;
+  function getExtras() {
+    if (!extrasPromise) {
+      extrasPromise = cfg.assetsUrl
+        ? http.json(cfg.assetsUrl + 'rules-extra.json?v=' + encodeURIComponent(cfg.version || '')).catch(function () { return { formats: {} }; })
+        : Promise.resolve({ formats: {} });
+    }
+    return extrasPromise;
+  }
+
+  function sameFormat(a, b) { return String(a || '').toLowerCase() === String(b || '').toLowerCase(); }
+
+  function byFormat(map, format) {
+    var key = Object.keys(map || {}).filter(function (k) { return sameFormat(k, format); })[0];
+    return key ? map[key] : [];
+  }
+
+  /** House rules that apply to a format: those without a format and those of that format, unless switched off */
+  function houseRulesFor(format) {
+    return ((cfg.settings || {}).customRules || []).filter(function (r) { return r && !r.Disabled && (!r.Format || sameFormat(r.Format, format)); });
+  }
+
+  var EMPTY_BUNDLE = { lands: {}, nonLands: {}, archetypes: [], fallbacks: [] };
+
+  function makeParser(bundle, format, extras) {
     var s = cfg.settings || {};
     return new Core.ArchetypeParser(bundle, {
       aliases: s.aliases || {},
       conflict: s.conflict || 'simpler',
-      customRules: (s.customRules || []).filter(function (r) { return !r.Format || String(r.Format).toLowerCase() === String(format).toLowerCase(); })
+      customRules: houseRulesFor(format),
+      extraRules: byFormat((extras || {}).formats, format)
     });
   }
 
@@ -122,24 +148,26 @@
   async function classify(tour, log, opts) {
     opts = opts || {};
     if (!tour.format) throw new Error(t('Format not detected: set it before importing.'));
+    var extras = await getExtras();
     var bundle;
     try { bundle = await getBundle(tour.format, tour.date, log); } catch (e) {
-      log('  ' + t('no rules for {format} ({error}): using the deck names declared by players, if any.', { format: tour.format, error: e.message }));
+      // No community rules for this format: house and supplementary rules still apply, then the declared deck names
+      log('  ' + t('no rules for {format} ({error}): using your house rules and the deck names declared by players, if any.', { format: tour.format, error: e.message }));
+      var sum = Core.classifyTournament(tour, makeParser(EMPTY_BUNDLE, tour.format, extras), { keepManual: opts.keepManual });
       tour.players.forEach(function (p) {
-        if (opts.keepManual && p.m === 'manual') return;
-        p.a = (cfg.settings.aliases || {})[p.dn] || p.dn || 'Unknown'; p.m = p.dn ? 'declared' : 'unknown';
+        if (p.m === 'unknown' && p.dn) { p.m = 'declared'; sum.unknown--; sum.declared = (sum.declared || 0) + 1; }
       });
-      return { declared: tour.players.filter(function (p) { return p.m === 'declared'; }).length };
+      return sum;
     }
     try {
       var enr = await Core.enrichColorsFromScryfall(http, bundle, tour.cards);
       if (enr.added) { log('  ' + t('colors of {n} new cards fetched from Scryfall', { n: enr.added })); await saveBundle(rulesKey(tour.format), bundle); }
     } catch (e) { log('  ' + t('Scryfall unreachable, continuing ({error})', { error: e.message })); }
-    return Core.classifyTournament(tour, makeParser(bundle, tour.format), { keepManual: opts.keepManual });
+    return Core.classifyTournament(tour, makeParser(bundle, tour.format, extras), { keepManual: opts.keepManual });
   }
 
-  var METHOD_SUMMARY = { rule: 'by rule', variant: 'variant', fallback: 'by similarity', conflict: 'conflicts resolved', unknown: 'unrecognized', nolist: 'without list', manual: 'manual', declared: 'declared name' };
-  var METHOD_BADGE = { rule: 'rule', variant: 'variant', fallback: 'similarity', conflict: 'conflict', unknown: 'unrecognized', nolist: 'no list', manual: 'manual', declared: 'declared' };
+  var METHOD_SUMMARY = { rule: 'by rule', custom: 'by house rule', variant: 'variant', extra: 'by supplementary rule', fallback: 'by similarity', conflict: 'conflicts resolved', unknown: 'unrecognized', nolist: 'without list', manual: 'manual', declared: 'declared name' };
+  var METHOD_BADGE = { rule: 'rule', custom: 'house rule', variant: 'variant', extra: 'supplementary', fallback: 'similarity', conflict: 'conflict', unknown: 'unrecognized', nolist: 'no list', manual: 'manual', declared: 'declared' };
 
   function summaryText(sum) {
     return Object.keys(sum).filter(function (k) { return sum[k]; }).map(function (k) { return sum[k] + ' ' + t(METHOD_SUMMARY[k] || k); }).join(' · ');
@@ -155,6 +183,49 @@
 
   async function loadTournament(entry) {
     return http.json(cfg.dataUrl + '/' + (entry.file || ('t/' + entry.id + '.json')) + '?t=' + Date.now());
+  }
+
+  /** Applies the current rules again to saved tournaments, keeping manual fixes */
+  async function reclassifyEntries(entries, log) {
+    var ok = 0;
+    for (var i = 0; i < entries.length; i++) {
+      log('[' + (i + 1) + '/' + entries.length + '] ' + entries[i].name);
+      try {
+        var tour = await loadTournament(entries[i]);
+        var sum = await classify(tour, log, { keepManual: true });
+        log('  ' + summaryText(sum));
+        await saveTournament(tour);
+        ok++;
+      } catch (err) { log('  ' + t('ERROR: {error}', { error: err.message })); }
+    }
+    log(t('Done: {n} of {total} tournaments reclassified.', { n: ok, total: entries.length }));
+    return ok;
+  }
+
+  /** Saves the settings, keeping the values that are not passed */
+  async function saveSettings(patch) {
+    var s = cfg.settings || {};
+    var body = Object.assign({ aliases: s.aliases || {}, customRules: s.customRules || [], conflict: s.conflict || 'simpler', prior: s.prior === undefined ? 10 : s.prior, accent: s.accent || '' }, patch);
+    cfg.settings = await wp('POST', '/settings', body);
+    return cfg.settings;
+  }
+
+  /** A checkbox in a table header that selects every visible row */
+  function selectAllBox(rows, selected, keyOf, onChange) {
+    var box = h('input', { type: 'checkbox', 'aria-label': t('Select all') });
+    var sync = function () {
+      var n = rows.filter(function (r) { return selected.has(keyOf(r)); }).length;
+      box.checked = rows.length > 0 && n === rows.length;
+      box.indeterminate = n > 0 && n < rows.length;
+    };
+    box.addEventListener('change', function () {
+      var on = box.checked;
+      rows.forEach(function (r) { if (on) selected.add(keyOf(r)); else selected.delete(keyOf(r)); });
+      onChange();
+    });
+    sync();
+    box.sync = sync;
+    return box;
   }
 
   // ---------------------------------------------------------------------------
@@ -251,12 +322,14 @@
       updateImportButton();
       if (!cacheState.items.length) { listBox.appendChild(h('p', { class: 'description', text: t('Choose a month and click “Search tournaments”.') })); return; }
       if (!items.length) { listBox.appendChild(h('p', { class: 'description', text: t('No tournament matches the filters.') })); return; }
+      var all = selectAllBox(items, cacheState.selected, function (it) { return it.path; }, drawList);
       var table = h('table', { class: 'widefat striped mtgsa-table' }, [
-        h('thead', {}, [h('tr', {}, [h('td', { class: 'check-column' }), h('th', { text: t('Date') }), h('th', { text: t('Tournament') }), h('th', { text: t('Format') }), h('th', { text: t('Size') }), h('th', { text: '' })])]),
+        h('thead', {}, [h('tr', {}, [h('td', { class: 'check-column' }, [all]), h('th', { text: t('Date') }), h('th', { text: t('Tournament') }), h('th', { text: t('Format') }), h('th', { text: t('Size') }), h('th', { text: '' })])]),
         h('tbody', {}, items.map(function (it) {
           var cb = h('input', { type: 'checkbox', checked: cacheState.selected.has(it.path), onchange: function () {
             if (this.checked) cacheState.selected.add(it.path); else cacheState.selected.delete(it.path);
             updateImportButton();
+            all.sync();
           } });
           return h('tr', {}, [
             h('th', { class: 'check-column' }, [cb]),
@@ -389,51 +462,77 @@
     p.body.innerHTML = '';
     if (!list.length) { p.body.appendChild(h('p', { text: t('No saved tournaments. Go to “Import”.') })); return; }
 
-    var reclassAll = h('button', { type: 'button', class: 'button', text: t('Reclassify all') });
-    p.body.appendChild(h('div', { class: 'mtgsa-row' }, [reclassAll]));
+    var selected = new Set();
+    var formats = list.map(function (e) { return e.format; }).filter(function (f, i, a) { return f && a.indexOf(f) === i; }).sort();
+    var fmtSel = h('select', {}, [h('option', { value: '', text: t('All formats') })].concat(formats.map(function (f) { return h('option', { value: f, text: f }); })));
+    var searchInp = h('input', { type: 'search', placeholder: t('Filter by name…'), class: 'regular-text' });
+    var reclassBtn = h('button', { type: 'button', class: 'button' });
+    var deleteBtn = h('button', { type: 'button', class: 'button button-link-delete' });
+    var tableBox = h('div');
+    p.body.appendChild(h('div', { class: 'mtgsa-row' }, [searchInp, fmtSel]));
+    p.body.appendChild(tableBox);
+    p.body.appendChild(h('div', { class: 'mtgsa-row' }, [reclassBtn, deleteBtn]));
 
-    async function reclassify(entry) {
-      log.log(entry.name);
-      var tour = await loadTournament(entry);
-      var sum = await classify(tour, log.log, { keepManual: true });
-      log.log('  ' + summaryText(sum));
-      await saveTournament(tour);
+    function updateBulk() {
+      reclassBtn.textContent = t('Reclassify selected ({n})', { n: selected.size });
+      deleteBtn.textContent = t('Delete selected ({n})', { n: selected.size });
+      reclassBtn.disabled = deleteBtn.disabled = selected.size === 0;
     }
 
-    var tbody = h('tbody', {}, list.map(function (e) {
-      var tr = h('tr', {}, [
-        h('td', { text: fmtDate(e.date) }),
-        h('td', {}, [e.uri && /^https?:/.test(e.uri) ? h('a', { href: e.uri, target: '_blank', rel: 'noopener', text: e.name }) : e.name]),
-        h('td', { text: e.format }),
-        h('td', { text: String(e.players) }),
-        h('td', { text: e.unknown === undefined ? '' : String(e.unknown) }),
-        h('td', { class: 'mtgsa-actions' }, [
-          h('button', { type: 'button', class: 'button button-small', text: t('Review'), onclick: async function () { go('review', await loadTournament(e)); } }),
-          h('button', { type: 'button', class: 'button button-small', text: t('Reclassify'), onclick: async function () {
-            this.disabled = true;
-            try { await reclassify(e); log.log('  ' + t('done ✓')); } catch (err) { log.log('  ' + t('ERROR: {error}', { error: err.message })); }
-            go('list');
-          } }),
-          h('button', { type: 'button', class: 'button button-small button-link-delete', text: t('Delete'), onclick: async function () {
-            if (!window.confirm(t('Delete “{name}”? The file will be removed from the site.', { name: e.name }))) return;
-            try { await wp('DELETE', '/tournaments/' + e.id); tr.remove(); } catch (err) { log.log(t('Error: {error}', { error: err.message })); }
-          } })
-        ])
-      ]);
-      return tr;
-    }));
-    p.body.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
-      h('thead', {}, [h('tr', {}, [t('Date'), t('Tournament'), t('Format'), t('Players'), t('Unrecognized'), ''].map(function (x) { return h('th', { text: x }); }))]),
-      tbody
-    ]));
-    reclassAll.addEventListener('click', async function () {
-      reclassAll.disabled = true;
-      for (var i = 0; i < list.length; i++) {
-        try { await reclassify(list[i]); } catch (err) { log.log('  ' + t('ERROR: {error}', { error: err.message })); }
-      }
-      log.log(t('Done.'));
+    function draw() {
+      var q = searchInp.value.toLowerCase(), f = fmtSel.value;
+      var rows = list.filter(function (e) { return (!f || e.format === f) && (!q || String(e.name).toLowerCase().indexOf(q) >= 0); });
+      // The selection only keeps visible tournaments, so bulk actions never touch rows hidden by the filters
+      Array.from(selected).forEach(function (id) { if (!rows.some(function (e) { return e.id === id; })) selected.delete(id); });
+      var all = selectAllBox(rows, selected, function (e) { return e.id; }, draw);
+      tableBox.innerHTML = '';
+      updateBulk();
+      if (!rows.length) { tableBox.appendChild(h('p', { class: 'description', text: t('No tournament matches the filters.') })); return; }
+      tableBox.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
+        h('thead', {}, [h('tr', {}, [h('td', { class: 'check-column' }, [all])].concat([t('Date'), t('Tournament'), t('Format'), t('Players'), t('Unrecognized'), ''].map(function (x) { return h('th', { text: x }); })))]),
+        h('tbody', {}, rows.map(function (e) {
+          return h('tr', {}, [
+            h('th', { class: 'check-column' }, [h('input', { type: 'checkbox', checked: selected.has(e.id), onchange: function () {
+              if (this.checked) selected.add(e.id); else selected.delete(e.id);
+              all.sync(); updateBulk();
+            } })]),
+            h('td', { text: fmtDate(e.date) }),
+            h('td', {}, [e.uri && /^https?:/.test(e.uri) ? h('a', { href: e.uri, target: '_blank', rel: 'noopener', text: e.name }) : e.name]),
+            h('td', { text: e.format }),
+            h('td', { text: String(e.players) }),
+            h('td', { text: e.unknown === undefined ? '' : String(e.unknown) }),
+            h('td', { class: 'mtgsa-actions' }, [
+              h('button', { type: 'button', class: 'button button-small', text: t('Review'), onclick: async function () { go('review', await loadTournament(e)); } })
+            ])
+          ]);
+        }))
+      ]));
+    }
+
+    function chosen() { return list.filter(function (e) { return selected.has(e.id); }); }
+
+    reclassBtn.addEventListener('click', async function () {
+      reclassBtn.disabled = deleteBtn.disabled = true;
+      await reclassifyEntries(chosen(), log.log);
       go('list');
     });
+    deleteBtn.addEventListener('click', async function () {
+      var todo = chosen();
+      var msg = todo.length === 1 ? t('Delete “{name}”? The file will be removed from the site.', { name: todo[0].name }) : t('Delete {n} tournaments? The files will be removed from the site.', { n: todo.length });
+      if (!window.confirm(msg)) return;
+      reclassBtn.disabled = deleteBtn.disabled = true;
+      for (var i = 0; i < todo.length; i++) {
+        try {
+          await wp('DELETE', '/tournaments/' + todo[i].id);
+          list.splice(list.indexOf(todo[i]), 1);
+          selected.delete(todo[i].id);
+        } catch (err) { log.log(t('Error: {error}', { error: err.message })); }
+      }
+      draw();
+    });
+    searchInp.addEventListener('input', draw);
+    fmtSel.addEventListener('change', draw);
+    draw();
   }
 
   // ---------------------------------------------------------------------------
@@ -584,9 +683,25 @@
   // Tab: Archetypes and rules
   // ---------------------------------------------------------------------------
 
+  // How each condition type reads in the editor and in the catalog
+  var CONDITION_LABELS = {
+    InMainboard: 'Main deck: all of',
+    InSideboard: 'Sideboard: all of',
+    InMainOrSideboard: 'Main deck or sideboard: all of',
+    OneOrMoreInMainboard: 'Main deck: at least one of',
+    OneOrMoreInSideboard: 'Sideboard: at least one of',
+    OneOrMoreInMainOrSideboard: 'Main deck or sideboard: at least one of',
+    TwoOrMoreInMainboard: 'Main deck: at least two of',
+    TwoOrMoreInSideboard: 'Sideboard: at least two of',
+    TwoOrMoreInMainOrSideboard: 'Main deck or sideboard: at least two of',
+    DoesNotContain: 'Main deck and sideboard: none of',
+    DoesNotContainMainboard: 'Main deck: none of',
+    DoesNotContainSideboard: 'Sideboard: none of'
+  };
+
   var RULE_EXAMPLE = [
     {
-      Name: 'DevotedDruidCombo',
+      Name: 'Devoted Combo',
       Format: 'Modern',
       IncludeColorInName: false,
       Conditions: [
@@ -596,37 +711,621 @@
     }
   ];
 
-  function renderRules(el) {
+  var TEST_MAX_TOURNAMENTS = 25;
+
+  function cardList(cards) {
+    if (typeof cards === 'string') cards = cards.split(/\r?\n/);
+    return (Array.isArray(cards) ? cards : []).map(Core.normCardName).filter(Boolean);
+  }
+
+  /**
+   * Groups the conditions for display and editing: single-card conditions of the same type become one line
+   * ("Main deck: all of A, B"). Like the community parser, they only look at their first card.
+   */
+  function conditionGroups(conditions) {
+    var out = [];
+    (Array.isArray(conditions) ? conditions : []).forEach(function (c) {
+      c = c || {};
+      var type = Core.CONDITION_TYPES.filter(function (x) { return x.toLowerCase() === String(c.Type || '').replace(/\s+/g, '').toLowerCase(); })[0] || String(c.Type || '');
+      var cards = cardList(c.Cards !== undefined ? c.Cards : c.Card);
+      var single = !/OrMore/.test(type);
+      var prev = single && out.filter(function (g) { return g.Type === type; })[0];
+      if (single) cards = cards.slice(0, 1);
+      if (prev) prev.Cards = prev.Cards.concat(cards); else out.push({ Type: type, Cards: cards });
+    });
+    return out;
+  }
+
+  function conditionText(c) {
+    return (CONDITION_LABELS[c.Type] ? t(CONDITION_LABELS[c.Type]) : c.Type) + ' ' + c.Cards.join(', ');
+  }
+
+  function ruleSummary(rule) {
+    var text = conditionGroups(rule.Conditions).map(conditionText).join(' · ');
+    var variants = (rule.Variants || []).map(function (v) { return v && v.Name; }).filter(Boolean);
+    if (variants.length) text += ' · ' + t('variants: {list}', { list: variants.join(', ') });
+    return text;
+  }
+
+  /** Normalized copy of a rule when it is valid, the rule as it is otherwise (it stays visible with its errors) */
+  function cleanRule(raw) {
+    var res = Core.normalizeRule(raw);
+    if (res.errors.length) return raw;
+    if (raw.Disabled) res.rule.Disabled = true;
+    return res.rule;
+  }
+
+  function ruleName(rule, custom) {
+    var name = Core.archetypeDisplayName({ Name: rule.Name, IncludeColorInName: false, _custom: custom }, '');
+    return rule.IncludeColorInName ? t('[colors]') + ' ' + name : name;
+  }
+
+  // --- Card names: Scryfall suggestions and spelling check
+
+  var suggestCache = {}, checkCache = {};
+
+  function suggestCards(q) {
+    q = q.trim().toLowerCase();
+    if (q.length < 2) return Promise.resolve([]);
+    if (!suggestCache[q]) {
+      suggestCache[q] = http.json('https://api.scryfall.com/cards/autocomplete?q=' + encodeURIComponent(q))
+        .then(function (r) { return r.data || []; }, function () { return []; });
+    }
+    return suggestCache[q];
+  }
+
+  /** { ok: true, name } when Scryfall knows the card, { ok: false } when it does not, { ok: null } when it cannot be reached */
+  function checkCard(name) {
+    var key = Core.cardKey(name);
+    if (!checkCache[key]) {
+      checkCache[key] = http.json('https://api.scryfall.com/cards/named?fuzzy=' + encodeURIComponent(name))
+        .then(function (c) { return { ok: true, name: Core.normCardName(c.name) }; },
+          function (e) { return { ok: /^HTTP 404/.test(e.message) ? false : null }; });
+    }
+    return checkCache[key];
+  }
+
+  var pickerSeq = 0;
+
+  /** Card list editor: one chip per card, suggestions while typing, several cards at once by pasting one per line */
+  function cardPicker(cards, onChange) {
+    var id = 'mtgsa-cards-' + (++pickerSeq);
+    var options = h('datalist', { id: id });
+    var chips = h('span', { class: 'mtgsa-cardchips' });
+    var input = h('input', { type: 'text', list: id, class: 'mtgsa-cardinput', placeholder: t('Add a card…'), autocomplete: 'off', 'aria-label': t('Add a card…') });
+    var timer = null;
+
+    function changed() { draw(); onChange(); }
+
+    function draw() {
+      chips.innerHTML = '';
+      cards.forEach(function (name, i) {
+        var chip = h('span', { class: 'mtgsa-cardchip' }, [h('span', { text: name }), h('button', {
+          type: 'button', class: 'mtgsa-chip-x', text: '×', 'aria-label': t('Remove {name}', { name: name }),
+          onclick: function (e) { e.stopPropagation(); cards.splice(i, 1); changed(); }
+        })]);
+        chips.appendChild(chip);
+        checkCard(name).then(function (res) {
+          if (cards[i] !== name) return;
+          if (res.ok === false) {
+            chip.classList.add('is-bad');
+            chip.title = t('Card not found on Scryfall: check the spelling.');
+          } else if (res.ok && res.name !== name) {
+            if (Core.cardKey(res.name) === Core.cardKey(name)) { cards[i] = res.name; changed(); return; }
+            chip.classList.add('is-warn');
+            chip.title = t('Did you mean “{name}”? Click to fix.', { name: res.name });
+            chip.addEventListener('click', function () { cards[i] = res.name; changed(); });
+          }
+        });
+      });
+    }
+
+    function add(text) {
+      text.split(/\r?\n|;/).map(function (line) { return Core.normCardName(line.replace(/^\s*\d+x?\s+/i, '')); }).filter(Boolean).forEach(function (n) {
+        if (!cards.some(function (c) { return Core.cardKey(c) === Core.cardKey(n); })) cards.push(n);
+      });
+      input.value = '';
+      options.innerHTML = '';
+      changed();
+    }
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); if (input.value.trim()) add(input.value); }
+      else if (e.key === 'Backspace' && !input.value && cards.length) { cards.pop(); changed(); }
+    });
+    input.addEventListener('input', function (e) {
+      var v = input.value;
+      // Picking a suggestion fires an input event that is not typing
+      if (!e.inputType || e.inputType === 'insertReplacementText') {
+        if (Array.prototype.some.call(options.options, function (o) { return o.value === v; })) { add(v); return; }
+      }
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        suggestCards(v).then(function (names) {
+          if (input.value !== v) return;
+          options.innerHTML = '';
+          names.forEach(function (n) { options.appendChild(h('option', { value: n })); });
+        });
+      }, 200);
+    });
+    input.addEventListener('paste', function (e) {
+      var text = (e.clipboardData || window.clipboardData).getData('text');
+      if (/\n/.test(text)) { e.preventDefault(); add(text); }
+    });
+    input.addEventListener('blur', function () { if (input.value.trim().length >= 3) add(input.value); });
+    draw();
+    return h('div', { class: 'mtgsa-cardpicker', onclick: function (e) { if (e.target === this || e.target === chips) input.focus(); } }, [chips, input, options]);
+  }
+
+  // --- Rule editor
+
+  /**
+   * opts: { formats, title, onSave(rule) → error message or '', onCancel(), onTest(rule) }
+   */
+  function ruleEditor(initial, opts) {
+    var draft = {
+      Name: String(initial.Name || ''),
+      Format: String(initial.Format || ''),
+      IncludeColorInName: !!initial.IncludeColorInName,
+      Conditions: conditionGroups(initial.Conditions),
+      Variants: initial.Variants
+    };
+    if (!draft.Conditions.length) draft.Conditions.push({ Type: 'InMainboard', Cards: [] });
+
+    var errorsBox = h('div', { class: 'mtgsa-errors', role: 'alert' });
+    var condBox = h('div', { class: 'mtgsa-conds' });
+    var tried = false;
+
+    function build() {
+      var raw = { Name: draft.Name, Format: draft.Format, IncludeColorInName: draft.IncludeColorInName, Conditions: draft.Conditions };
+      if (draft.Variants) raw.Variants = draft.Variants;
+      var res = Core.normalizeRule(raw);
+      if (res.rule && initial.Disabled) res.rule.Disabled = true;
+      return res;
+    }
+
+    function showErrors(list) {
+      errorsBox.innerHTML = '';
+      list.forEach(function (msg) { errorsBox.appendChild(h('p', { text: msg })); });
+    }
+
+    function refresh() { if (tried) showErrors(build().errors); }
+
+    function drawConditions() {
+      condBox.innerHTML = '';
+      draft.Conditions.forEach(function (c, i) {
+        var typeSel = h('select', { 'aria-label': t('Condition type') }, Core.CONDITION_TYPES.map(function (type) {
+          return h('option', { value: type, selected: type === c.Type, text: t(CONDITION_LABELS[type]) });
+        }));
+        typeSel.addEventListener('change', function () { c.Type = typeSel.value; refresh(); });
+        condBox.appendChild(h('div', { class: 'mtgsa-cond' }, [
+          typeSel,
+          cardPicker(c.Cards, refresh),
+          h('button', { type: 'button', class: 'button-link mtgsa-cond-x', text: t('Remove'), disabled: draft.Conditions.length < 2, onclick: function () {
+            draft.Conditions.splice(i, 1); drawConditions(); refresh();
+          } })
+        ]));
+      });
+    }
+
+    var nameInp = h('input', { type: 'text', class: 'regular-text', value: draft.Name, placeholder: t('e.g. Boros Dwarves'), oninput: function () { draft.Name = this.value; refresh(); } });
+    var fmtSel = h('select', { onchange: function () { draft.Format = this.value; } }, [h('option', { value: '', text: t('All formats') })].concat(opts.formats.map(function (f) {
+      return h('option', { value: f, selected: sameFormat(f, draft.Format), text: f });
+    })));
+    var colorChk = h('input', { type: 'checkbox', checked: draft.IncludeColorInName, onchange: function () { draft.IncludeColorInName = this.checked; } });
+    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: t('Save rule') });
+    var testBtn = h('button', { type: 'button', class: 'button', text: t('Test on saved tournaments') });
+    var cancelBtn = h('button', { type: 'button', class: 'button-link', text: t('Cancel'), onclick: function () { opts.onCancel(); } });
+
+    saveBtn.addEventListener('click', async function () {
+      tried = true;
+      var res = build();
+      showErrors(res.errors);
+      if (res.errors.length) return;
+      saveBtn.disabled = true;
+      var err = await opts.onSave(res.rule);
+      saveBtn.disabled = false;
+      if (err) showErrors([err]);
+    });
+    testBtn.addEventListener('click', function () {
+      tried = true;
+      var res = build();
+      showErrors(res.errors);
+      if (!res.errors.length) opts.onTest(res.rule);
+    });
+
+    drawConditions();
+    return h('div', { class: 'mtgsa-editor' }, [
+      h('h3', { text: opts.title }),
+      h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Archetype name') + ' ', nameInp]), h('label', {}, [t('Format') + ' ', fmtSel])]),
+      h('div', { class: 'mtgsa-row' }, [h('label', {}, [colorChk, ' ' + t('Put the deck colors before the name (e.g. “Izzet” + name)')])]),
+      h('p', { class: 'description', text: t('A deck gets this archetype when it meets every condition. Type a card name and pick it from the suggestions, or paste a list with one card per line.') }),
+      condBox,
+      h('p', {}, [h('button', { type: 'button', class: 'button', text: '+ ' + t('Add condition'), onclick: function () {
+        draft.Conditions.push({ Type: 'OneOrMoreInMainboard', Cards: [] }); drawConditions();
+      } })]),
+      draft.Variants && draft.Variants.length ? h('p', { class: 'description', text: t('This rule also has {n} variants: they are kept, and you can change them in the JSON editor.', { n: draft.Variants.length }) }) : null,
+      errorsBox,
+      h('div', { class: 'mtgsa-row' }, [saveBtn, testBtn, cancelBtn])
+    ]);
+  }
+
+  /** Runs a rule alone on the most recent saved tournaments and shows which decks it would take */
+  async function testRule(rule, box) {
+    box.innerHTML = '';
+    box.appendChild(h('p', { class: 'description', text: t('Testing on saved tournaments…') }));
+    var idx = await loadIndex();
+    var entries = (idx.tournaments || []).filter(function (e) { return !rule.Format || sameFormat(e.format, rule.Format); })
+      .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); }).slice(0, TEST_MAX_TOURNAMENTS);
+    box.innerHTML = '';
+    if (!entries.length) { box.appendChild(h('p', { class: 'description', text: t('No saved tournaments to test on.') })); return; }
+    var parsers = {}, hits = [], decks = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var tour;
+      try { tour = await loadTournament(entries[i]); } catch (e) { continue; }
+      var key = rulesKey(tour.format);
+      var b = bundles[key] || EMPTY_BUNDLE;
+      parsers[key] = parsers[key] || new Core.ArchetypeParser({ lands: b.lands || {}, nonLands: b.nonLands || {}, archetypes: [], fallbacks: [] }, { customRules: [rule] });
+      tour.players.forEach(function (p) {
+        if (!p.mb || !p.mb.length) return;
+        decks++;
+        var deck = Core.deckOf(tour, p);
+        var r = parsers[key].detect(deck.main, deck.side);
+        if (r.method !== 'unknown' && r.method !== 'fallback') hits.push({ tour: tour, p: p, name: r.archetype });
+      });
+    }
+    box.appendChild(h('p', {}, [h('strong', { text: t('The rule takes {n} of {total} decks in the last {k} saved tournaments.', { n: hits.length, total: decks, k: entries.length }) })]));
+    if (!hits.length) {
+      box.appendChild(h('p', { class: 'description', text: t('No deck matches: check the card names and the conditions.') }));
+      return;
+    }
+    var now = {};
+    hits.forEach(function (x) {
+      var k = (x.p.a || 'Unknown') + '\u0000' + (x.p.m || '');
+      now[k] = (now[k] || 0) + 1;
+    });
+    box.appendChild(h('table', { class: 'widefat striped mtgsa-table mtgsa-narrow' }, [
+      h('thead', {}, [h('tr', {}, [t('Currently classified as'), t('Method'), t('Decks')].map(function (x) { return h('th', { text: x }); }))]),
+      h('tbody', {}, Object.keys(now).sort(function (a, b) { return now[b] - now[a]; }).map(function (k) {
+        var parts = k.split('\u0000');
+        return h('tr', {}, [h('td', { text: parts[0] }), h('td', {}, [h('span', { class: 'mtgsa-badge is-' + parts[1], text: METHOD_BADGE[parts[1]] ? t(METHOD_BADGE[parts[1]]) : parts[1] })]), h('td', { text: String(now[k]) })]);
+      }))
+    ]));
+    var sample = h('details', {}, [h('summary', { text: t('Show the decks ({n})', { n: hits.length }) })]);
+    var tbody = h('tbody');
+    hits.slice(0, 200).forEach(function (x) {
+      var p = x.p;
+      tbody.appendChild(h('tr', {}, [
+        h('td', { text: p.n }),
+        h('td', { text: p.w !== undefined ? p.w + '-' + p.l + (p.d ? '-' + p.d : '') : '' }),
+        h('td', { text: x.name }),
+        h('td', { text: p.a || 'Unknown' }),
+        h('td', { class: 'mtgsa-info', text: x.tour.name + ' · ' + fmtDate(x.tour.date) })
+      ]));
+    });
+    sample.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
+      h('thead', {}, [h('tr', {}, [t('Player'), t('Record'), t('With this rule'), t('Now'), t('Tournament')].map(function (x) { return h('th', { text: x }); }))]),
+      tbody
+    ]));
+    box.appendChild(sample);
+  }
+
+  function downloadJson(name, data) {
+    var url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    var a = h('a', { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  var rulesTab = { format: '', houseFormat: '' };
+
+  async function renderRules(el) {
     var s = cfg.settings || {};
-    var p1 = panel(t('Aliases'), t('One alias per line, as “Detected name => Displayed name”. Useful to standardize names (e.g. Simic Birthing Ritual => Simic Ritual). Applies to new imports and to “Reclassify”.'));
-    var aliasTa = h('textarea', { rows: 8, class: 'large-text code', spellcheck: 'false' });
+    var house = (s.customRules || []).slice();
+    var idx = await loadIndex();
+    var saved = idx.tournaments || [];
+    var extras = await getExtras();
+
+    // Formats in the menus: the known ones plus those of the saved tournaments and of the rules
+    var formats = Core.KNOWN_FORMATS.slice();
+    saved.map(function (e) { return e.format; }).concat(house.map(function (r) { return r && r.Format; }), Object.keys(extras.formats || {})).forEach(function (f) {
+      if (f && !formats.some(function (x) { return sameFormat(x, f); })) formats.push(String(f));
+    });
+    if (!rulesTab.format) {
+      var count = {};
+      saved.forEach(function (e) { count[e.format] = (count[e.format] || 0) + 1; });
+      rulesTab.format = Object.keys(count).sort(function (a, b) { return count[b] - count[a]; })[0] || 'Standard';
+    }
+
+    var notice = h('div');
+    el.appendChild(notice);
+
+    /** After a change to rules or aliases: offer to apply it to the saved tournaments */
+    function offerReclassify() {
+      notice.innerHTML = '';
+      if (!saved.length) return;
+      var log = makeLog();
+      var btn = h('button', { type: 'button', class: 'button button-primary', text: t('Reclassify the saved tournaments ({n})', { n: saved.length }) });
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        await reclassifyEntries(saved, log.log);
+        btn.textContent = t('Done ✓');
+      });
+      notice.appendChild(h('div', { class: 'notice notice-info mtgsa-notice' }, [
+        h('p', { text: t('Saved. The tournaments already imported keep their archetypes until you reclassify them (manual fixes are kept).') }),
+        h('p', {}, [btn]),
+        log
+      ]));
+    }
+
+    // --- House rules
+    var p1 = panel(t('House rules'), t('Your own archetype definitions, saved in the WordPress database. They take precedence over every other rule; a house rule with the same name as a community archetype replaces it. Rules with errors stay saved but are ignored until you fix them.'));
+    var editorBox = h('div');
+    var testBox = h('div', { class: 'mtgsa-test' });
+    var houseBox = h('div');
+    var houseStatus = h('span', { class: 'mtgsa-status' });
+    var houseFmt = h('select', {}, [h('option', { value: '', text: t('All formats') })].concat(formats.map(function (f) {
+      return h('option', { value: f, selected: f === rulesTab.houseFormat, text: f });
+    })));
+    houseFmt.addEventListener('change', function () { rulesTab.houseFormat = this.value; drawHouse(); });
+    var fileInp = h('input', { type: 'file', accept: '.json,application/json', multiple: true, hidden: true });
+
+    async function storeRules(rules) {
+      houseStatus.textContent = t('Saving…');
+      try {
+        await saveSettings({ customRules: rules });
+        var kept = (cfg.settings.customRules || []).length;
+        house = (cfg.settings.customRules || []).slice();
+        houseStatus.textContent = kept < rules.length ? t('Saved, but the server discarded {n} rules without a name.', { n: rules.length - kept }) : t('Saved ✓');
+        drawHouse();
+        drawCatalog();
+        offerReclassify();
+        return '';
+      } catch (e) {
+        houseStatus.textContent = t('Error: {error}', { error: e.message });
+        return t('Error: {error}', { error: e.message });
+      }
+    }
+
+    function openEditor(rule, index, title) {
+      testBox.innerHTML = '';
+      editorBox.innerHTML = '';
+      editorBox.appendChild(ruleEditor(rule, {
+        formats: formats,
+        title: title,
+        onCancel: function () { editorBox.innerHTML = ''; testBox.innerHTML = ''; },
+        onTest: function (r) { testRule(r, testBox); },
+        onSave: async function (r) {
+          var clash = house.some(function (x, i) { return i !== index && x && String(x.Name).trim().toLowerCase() === r.Name.toLowerCase() && sameFormat(x.Format, r.Format); });
+          if (clash) return t('There is already a house rule with this name for this format.');
+          var next = house.slice();
+          if (index >= 0) next[index] = r; else next.push(r);
+          var err = await storeRules(next);
+          if (!err) { editorBox.innerHTML = ''; testBox.innerHTML = ''; }
+          return err;
+        }
+      }));
+      editorBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      var first = editorBox.querySelector('input');
+      if (first) first.focus({ preventScroll: true });
+    }
+
+    function drawHouse() {
+      houseBox.innerHTML = '';
+      var f = houseFmt.value;
+      var rows = house.map(function (r, i) { return { r: r || {}, i: i }; }).filter(function (x) { return !f || !x.r.Format || sameFormat(x.r.Format, f); });
+      if (!house.length) { houseBox.appendChild(h('p', { class: 'description', text: t('No house rules yet. Create one, or start from an archetype of the catalog below with “Customize”.') })); return; }
+      if (!rows.length) { houseBox.appendChild(h('p', { class: 'description', text: t('No house rules for this format.') })); return; }
+      var valid = 0;
+      var tbody = h('tbody', {}, rows.map(function (x) {
+        var r = x.r, res = Core.normalizeRule(r);
+        var bad = res.errors.length > 0;
+        if (!bad && !r.Disabled) valid++;
+        var status = bad ? h('span', { class: 'mtgsa-badge is-unknown', text: t('ignored: errors') })
+          : r.Disabled ? h('span', { class: 'mtgsa-badge', text: t('off') }) : h('span', { class: 'mtgsa-badge is-manual', text: t('active') });
+        var onChk = h('input', { type: 'checkbox', checked: !r.Disabled, disabled: bad, 'aria-label': t('Use this rule'), onchange: function () {
+          var next = house.slice();
+          next[x.i] = Object.assign({}, r);
+          if (this.checked) delete next[x.i].Disabled; else next[x.i].Disabled = true;
+          storeRules(next);
+        } });
+        return h('tr', { class: bad ? 'mtgsa-row-bad' : r.Disabled ? 'mtgsa-row-off' : '' }, [
+          h('th', { class: 'check-column' }, [onChk]),
+          h('td', {}, [h('strong', { text: r.Name ? ruleName(r, true) : t('Rule without a name') })].concat(bad ? [h('div', { class: 'mtgsa-errors' }, res.errors.map(function (m) { return h('p', { text: m }); }))] : [])),
+          h('td', { text: r.Format || t('All formats') }),
+          h('td', { class: 'mtgsa-info', text: ruleSummary(res.rule || r) }),
+          h('td', {}, [status]),
+          h('td', { class: 'mtgsa-actions' }, [
+            h('button', { type: 'button', class: 'button button-small', text: t('Edit'), onclick: function () { openEditor(r, x.i, t('Edit house rule')); } }),
+            h('button', { type: 'button', class: 'button button-small', text: t('Test'), disabled: bad, onclick: function () { editorBox.innerHTML = ''; testRule(res.rule, testBox); testBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }),
+            h('button', { type: 'button', class: 'button button-small button-link-delete', text: t('Delete'), onclick: function () {
+              if (!window.confirm(t('Delete the house rule “{name}”?', { name: r.Name || '?' }))) return;
+              var next = house.slice();
+              next.splice(x.i, 1);
+              storeRules(next);
+            } })
+          ])
+        ]);
+      }));
+      houseBox.appendChild(h('p', { class: 'description', text: t('{n} rules, {v} in use.', { n: rows.length, v: valid }) }));
+      houseBox.appendChild(h('table', { class: 'widefat mtgsa-table' }, [
+        h('thead', {}, [h('tr', {}, [h('td', { class: 'check-column' }), h('th', { text: t('Archetype') }), h('th', { text: t('Format') }), h('th', { text: t('Definition') }), h('th', { text: t('Status') }), h('th', { text: '' })])]),
+        tbody
+      ]));
+    }
+
+    fileInp.addEventListener('change', async function () {
+      var added = [], bad = [];
+      for (var i = 0; i < fileInp.files.length; i++) {
+        var file = fileInp.files[i];
+        try {
+          var data = Core.parseLenientJson(await file.text());
+          (Array.isArray(data) ? data : [data]).forEach(function (r) {
+            if (!r || typeof r !== 'object') return;
+            if (!r.Format && houseFmt.value) r.Format = houseFmt.value;
+            added.push(cleanRule(r));
+          });
+        } catch (e) { bad.push(file.name); }
+      }
+      fileInp.value = '';
+      if (bad.length) houseStatus.textContent = t('Not valid JSON: {files}', { files: bad.join(', ') });
+      if (!added.length) return;
+      var next = house.slice(), replaced = 0;
+      added.forEach(function (r) {
+        var at = next.findIndex(function (x) { return x && r.Name && String(x.Name).trim().toLowerCase() === String(r.Name).trim().toLowerCase() && sameFormat(x.Format, r.Format); });
+        if (at >= 0) { next[at] = r; replaced++; } else next.push(r);
+      });
+      if (replaced && !window.confirm(t('{n} imported rules have the same name and format as existing house rules and will replace them. Continue?', { n: replaced }))) return;
+      await storeRules(next);
+    });
+
+    // Every house rule as JSON, for bulk changes and for variants
+    var jsonTa = h('textarea', { rows: 14, class: 'large-text code', spellcheck: 'false', placeholder: JSON.stringify(RULE_EXAMPLE, null, 2) });
+    var jsonStatus = h('span', { class: 'mtgsa-status' });
+    var jsonBox = h('details', { class: 'mtgsa-json' }, [
+      h('summary', { text: t('Edit all house rules as JSON') }),
+      h('p', { class: 'description', text: t('Same schema as the MTGOFormatData rules (Name, IncludeColorInName, Conditions, Variants), plus the optional “Format” and “Disabled” fields. Condition types: {types}.', { types: Core.CONDITION_TYPES.join(', ') }) }),
+      jsonTa,
+      h('div', { class: 'mtgsa-row' }, [
+        h('button', { type: 'button', class: 'button', text: t('Save JSON'), onclick: async function () {
+          var list = [];
+          if (jsonTa.value.trim()) {
+            try { list = Core.parseLenientJson(jsonTa.value); } catch (e) { jsonStatus.textContent = t('Invalid rules JSON: {error}', { error: e.message }); return; }
+            if (!Array.isArray(list)) list = [list];
+          }
+          jsonStatus.textContent = '';
+          await storeRules(list.filter(function (r) { return r && typeof r === 'object'; }).map(cleanRule));
+          jsonTa.value = JSON.stringify(house, null, 2);
+        } }),
+        h('button', { type: 'button', class: 'button-link', text: t('Insert example'), onclick: function () { if (!jsonTa.value.trim()) jsonTa.value = JSON.stringify(RULE_EXAMPLE, null, 2); } }),
+        jsonStatus
+      ])
+    ]);
+    jsonBox.addEventListener('toggle', function () { if (jsonBox.open) jsonTa.value = house.length ? JSON.stringify(house, null, 2) : ''; });
+
+    p1.body.appendChild(h('div', { class: 'mtgsa-row' }, [
+      h('button', { type: 'button', class: 'button button-primary', text: '+ ' + t('New rule'), onclick: function () { openEditor({ Format: houseFmt.value || rulesTab.format }, -1, t('New house rule')); } }),
+      h('button', { type: 'button', class: 'button', text: t('Import JSON files…'), onclick: function () { fileInp.click(); } }),
+      h('button', { type: 'button', class: 'button', text: t('Download JSON'), onclick: function () { downloadJson('mtgstats-house-rules.json', house); } }),
+      h('label', {}, [t('Show') + ' ', houseFmt]),
+      houseStatus,
+      fileInp
+    ]));
+    p1.body.appendChild(editorBox);
+    p1.body.appendChild(testBox);
+    p1.body.appendChild(houseBox);
+    p1.body.appendChild(jsonBox);
+    el.appendChild(p1);
+
+    // --- Catalog: every archetype a format knows, by source
+    var p2 = panel(t('Archetype catalog'), t('What the plugin recognizes in a format, in order of priority: your house rules, the community rules (MTGOFormatData), the supplementary rules shipped with the plugin for archetypes the community has not added yet, and finally the similarity groups. “Customize” copies an archetype into your house rules.'));
+    var catFmt = h('select', {}, formats.map(function (f) { return h('option', { value: f, selected: sameFormat(f, rulesTab.format), text: f }); }));
+    var catSearch = h('input', { type: 'search', placeholder: t('Search archetype or card…'), class: 'regular-text' });
+    var updateBtn = h('button', { type: 'button', class: 'button', text: t('Update community rules now') });
+    var catInfo = h('div', { class: 'mtgsa-catinfo' });
+    var catBox = h('div', { class: 'mtgsa-list mtgsa-catalog' });
+    var catLog = makeLog();
+    var catRows = [];
+    p2.body.appendChild(h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Format') + ' ', catFmt]), catSearch, updateBtn]));
+    p2.body.appendChild(catInfo);
+    p2.body.appendChild(catLog);
+    p2.body.appendChild(catBox);
+    el.appendChild(p2);
+
+    var SOURCE_BADGE = { house: ['house rule', 'is-manual'], community: ['community', ''], extra: ['supplementary', 'is-extra'], fallback: ['similarity', 'is-fallback'] };
+
+    async function drawCatalog() {
+      var format = catFmt.value;
+      rulesTab.format = format;
+      catInfo.innerHTML = '';
+      catBox.innerHTML = '';
+      catBox.appendChild(h('p', { class: 'description', text: t('Loading…') }));
+      var bundle = null, error = '';
+      try { bundle = await getBundle(format, new Date().toISOString().slice(0, 10), catLog.log); } catch (e) { error = e.message; }
+      if (catFmt.value !== format) return;
+      var extraList = byFormat(extras.formats, format);
+      catRows = [];
+      house.forEach(function (r, i) {
+        if (r && (!r.Format || sameFormat(r.Format, format))) catRows.push({ source: 'house', rule: r, index: i, off: r.Disabled || Core.normalizeRule(r).errors.length > 0 });
+      });
+      ((bundle && bundle.archetypes) || []).forEach(function (r) { catRows.push({ source: 'community', rule: r }); });
+      extraList.forEach(function (r) { catRows.push({ source: 'extra', rule: r }); });
+      ((bundle && bundle.fallbacks) || []).forEach(function (r) { catRows.push({ source: 'fallback', rule: r }); });
+
+      catInfo.appendChild(h('p', { text: bundle
+        ? t('Community rules: folder {folder}, downloaded on {date}: {a} archetypes and {f} similarity groups.', { folder: bundle.folder, date: fmtDate(String(bundle.loadedAt || '').slice(0, 10)), a: bundle.archetypes.length, f: bundle.fallbacks.length })
+        : t('No community rules for {format}: {error}', { format: format, error: error }) }));
+      catInfo.appendChild(h('p', { text: t('Supplementary rules: {n} for {format} (updated on {date}).', { n: extraList.length, format: format, date: fmtDate(extras.updated) }) }));
+      drawCatalogRows();
+    }
+
+    function drawCatalogRows() {
+      catBox.innerHTML = '';
+      var q = Core.cardKey(catSearch.value || '');
+      var rows = catRows.filter(function (x) {
+        if (!q) return true;
+        var r = x.rule;
+        var hay = [r.Name].concat((r.Conditions || []).reduce(function (acc, c) { return acc.concat(cardList(c && c.Cards)); }, []), r.CommonCards || []);
+        return hay.some(function (v) { return Core.cardKey(v || '').indexOf(q) >= 0; });
+      });
+      if (!rows.length) { catBox.appendChild(h('p', { class: 'description', text: t('No archetype matches the search.') })); return; }
+      catBox.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
+        h('thead', {}, [h('tr', {}, [t('Archetype'), t('Source'), t('Definition'), ''].map(function (x) { return h('th', { text: x }); }))]),
+        h('tbody', {}, rows.map(function (x) {
+          var r = x.rule, b = SOURCE_BADGE[x.source];
+          var def = x.source === 'fallback'
+            ? h('td', { class: 'mtgsa-info', title: (r.CommonCards || []).join(', '), text: t('Similar to {n} typical cards: {list}…', { n: (r.CommonCards || []).length, list: (r.CommonCards || []).slice(0, 6).join(', ') }) })
+            : h('td', { class: 'mtgsa-info', text: ruleSummary(x.source === 'house' ? (Core.normalizeRule(r).rule || r) : r) });
+          var action = null;
+          if (x.source === 'house') action = h('button', { type: 'button', class: 'button button-small', text: t('Edit'), onclick: function () { openEditor(r, x.index, t('Edit house rule')); } });
+          else if (x.source !== 'fallback') action = h('button', { type: 'button', class: 'button button-small', text: t('Customize'), onclick: function () {
+            openEditor({ Name: ruleName({ Name: r.Name }, x.source === 'extra'), Format: catFmt.value, IncludeColorInName: r.IncludeColorInName, Conditions: r.Conditions, Variants: r.Variants }, -1, t('New house rule'));
+          } });
+          return h('tr', { class: x.off ? 'mtgsa-row-off' : '' }, [
+            h('td', {}, [h('strong', { text: ruleName(r, x.source !== 'community' && x.source !== 'fallback') })]),
+            h('td', {}, [h('span', { class: 'mtgsa-badge ' + b[1], text: t(b[0]) })]),
+            def,
+            h('td', { class: 'mtgsa-actions' }, [action])
+          ]);
+        }))
+      ]));
+      if (rows.length < catRows.length || q) catBox.appendChild(h('p', { class: 'description', text: t('{n} of {total} archetypes.', { n: rows.length, total: catRows.length }) }));
+    }
+
+    catFmt.addEventListener('change', drawCatalog);
+    catSearch.addEventListener('input', drawCatalogRows);
+    updateBtn.addEventListener('click', async function () {
+      updateBtn.disabled = true;
+      forceRulesReload = true;
+      delete bundles[rulesKey(catFmt.value)];
+      await drawCatalog();
+      forceRulesReload = false;
+      updateBtn.disabled = false;
+    });
+
+    // --- Aliases and options
+    var p3 = panel(t('Aliases'), t('One alias per line, as “Detected name => Displayed name”. Useful to standardize names (e.g. Simic Birthing Ritual => Simic Ritual). Applies to new imports and to “Reclassify”.'));
+    var aliasTa = h('textarea', { rows: 6, class: 'large-text code', spellcheck: 'false' });
     aliasTa.value = Object.keys(s.aliases || {}).map(function (k) { return k + ' => ' + s.aliases[k]; }).join('\n');
-    p1.body.appendChild(aliasTa);
+    p3.body.appendChild(aliasTa);
 
-    var p2 = panel(t('Custom rules'), t('Same JSON schema as the MTGOFormatData rules (conditions: InMainboard, InSideboard, InMainOrSideboard, OneOrMoreIn…, TwoOrMoreIn…, DoesNotContain…). The optional “Format” field limits a rule to one format. Custom rules take precedence over the community ones.'));
-    var rulesTa = h('textarea', { rows: 14, class: 'large-text code', spellcheck: 'false', placeholder: JSON.stringify(RULE_EXAMPLE, null, 2) });
-    rulesTa.value = (s.customRules || []).length ? JSON.stringify(s.customRules, null, 2) : '';
-    p2.body.appendChild(rulesTa);
-    p2.body.appendChild(h('p', {}, [h('button', { type: 'button', class: 'button', text: t('Insert example'), onclick: function () { if (!rulesTa.value.trim()) rulesTa.value = JSON.stringify(RULE_EXAMPLE, null, 2); } })]));
-
-    var p3 = panel(t('Options'), null);
+    var p4 = panel(t('Options'), null);
     var conflictSel = h('select', {}, [['simpler', t('When several rules match, pick the simplest')], ['none', t('When several rules match, mark “Conflict(…)”')]].map(function (o) {
       return h('option', { value: o[0], selected: (s.conflict || 'simpler') === o[0], text: o[1] });
     }));
     var priorInp = h('input', { type: 'number', min: '0', max: '100', value: String(s.prior === undefined ? 10 : s.prior), class: 'small-text' });
-    p3.body.appendChild(h('div', { class: 'mtgsa-row' }, [conflictSel]));
-    p3.body.appendChild(h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Bayesian win-rate prior: Beta('), priorInp, t(', same value)')])]));
-    p3.body.appendChild(h('p', { class: 'description', text: t('10 = cautious estimate with few matches, 1 = almost no smoothing.') }));
+    p4.body.appendChild(h('div', { class: 'mtgsa-row' }, [conflictSel]));
+    p4.body.appendChild(h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Bayesian win-rate prior: Beta('), priorInp, t(', same value)')])]));
+    p4.body.appendChild(h('p', { class: 'description', text: t('10 = cautious estimate with few matches, 1 = almost no smoothing.') }));
     var accentOn = h('input', { type: 'checkbox', checked: !!s.accent });
     var accentInp = h('input', { type: 'color', value: s.accent || '#2a78d6' });
-    p3.body.appendChild(h('div', { class: 'mtgsa-row' }, [h('label', {}, [accentOn, ' ' + t('Custom accent color') + ' ', accentInp])]));
-    p3.body.appendChild(h('p', { class: 'description', text: t('When off, the dashboard uses the WordPress theme’s primary color (if the theme declares one) or a neutral blue.') }));
-    var reloadBtn = h('button', { type: 'button', class: 'button', text: t('Reload community rules on the next import') });
-    reloadBtn.addEventListener('click', function () { forceRulesReload = true; bundles = {}; reloadBtn.textContent = t('OK: they will be downloaded again'); reloadBtn.disabled = true; });
-    p3.body.appendChild(h('div', { class: 'mtgsa-row' }, [reloadBtn]));
+    p4.body.appendChild(h('div', { class: 'mtgsa-row' }, [h('label', {}, [accentOn, ' ' + t('Custom accent color') + ' ', accentInp])]));
+    p4.body.appendChild(h('p', { class: 'description', text: t('When off, the dashboard uses the WordPress theme’s primary color (if the theme declares one) or a neutral blue.') }));
 
     var status = h('span', { class: 'mtgsa-status' });
-    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: t('Save settings') });
+    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: t('Save aliases and options') });
     saveBtn.addEventListener('click', async function () {
       var aliases = {}, bad = [];
       aliasTa.value.split('\n').forEach(function (line, i) {
@@ -635,24 +1334,23 @@
         if (m.length !== 2 || !m[0].trim() || !m[1].trim()) bad.push(i + 1); else aliases[m[0].trim()] = m[1].trim();
       });
       if (bad.length) { status.textContent = t('Invalid aliases on lines {lines}', { lines: bad.join(', ') }); return; }
-      var rules = [];
-      if (rulesTa.value.trim()) {
-        try { rules = JSON.parse(rulesTa.value); if (!Array.isArray(rules)) rules = [rules]; } catch (e) { status.textContent = t('Invalid rules JSON: {error}', { error: e.message }); return; }
-        var invalid = rules.filter(function (r) { return !r || !r.Name || !Array.isArray(r.Conditions) || !r.Conditions.length; });
-        if (invalid.length) { status.textContent = t('Every rule needs a Name and at least one condition.'); return; }
-      }
+      var aliasesChanged = JSON.stringify(aliases) !== JSON.stringify(cfg.settings.aliases || {});
       saveBtn.disabled = true;
       try {
-        cfg.settings = await wp('POST', '/settings', { aliases: aliases, customRules: rules, conflict: conflictSel.value, prior: parseInt(priorInp.value, 10) || 0, accent: accentOn.checked ? accentInp.value : '' });
-        status.textContent = t('Saved ✓ — use “Reclassify all” in “Saved tournaments” to apply them to existing tournaments.');
+        await saveSettings({ aliases: aliases, conflict: conflictSel.value, prior: parseInt(priorInp.value, 10) || 0, accent: accentOn.checked ? accentInp.value : '' });
+        status.textContent = t('Saved ✓');
+        if (aliasesChanged) offerReclassify();
       } catch (e) { status.textContent = t('Error: {error}', { error: e.message }); }
       saveBtn.disabled = false;
     });
 
-    el.appendChild(p1);
-    el.appendChild(p2);
+    // Not a sticky bar here: house rules save on their own, and a bar would cover the editors above
+    p4.body.appendChild(h('div', { class: 'mtgsa-row' }, [saveBtn, status]));
     el.appendChild(p3);
-    el.appendChild(h('div', { class: 'mtgsa-savebar' }, [saveBtn, status]));
+    el.appendChild(p4);
+
+    drawHouse();
+    drawCatalog();
   }
 
   // ---------------------------------------------------------------------------

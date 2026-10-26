@@ -10,7 +10,7 @@ label in this guide appears in Italian. Labels are quoted here in English.
 - [Installing](#installing)
 - [Importing tournaments](#importing-tournaments)
 - [Reviewing archetypes](#reviewing-archetypes)
-- [Aliases and custom rules](#aliases-and-custom-rules)
+- [House rules and aliases](#house-rules-and-aliases)
 - [Managing saved tournaments](#managing-saved-tournaments)
 - [Publishing the dashboard](#publishing-the-dashboard)
 - [Reading the dashboard](#reading-the-dashboard)
@@ -29,7 +29,7 @@ event.
 
 ## Installing
 
-1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.10.26.zip`, then click **Install Now** and **Activate**.
+1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.10.2026.1.zip`, then click **Install Now** and **Activate**.
 2. A new **MTG Stats** entry appears in the admin menu.
 3. Tournament data is stored in `wp-content/uploads/mtgstats/`, so uninstalling the plugin does not delete it.
 
@@ -60,7 +60,11 @@ after they end.
 1. Choose the **Source** (usually `melee.gg`) and the **Month**.
 2. Click **Search tournaments**.
 3. Narrow the list with the text filter, the format menu and **Hide already imported**.
-4. Tick the events you want and click **Import selected**.
+4. Tick the events you want, or use the checkbox in the table header to select every event in the list, then click
+   **Import selected**.
+
+The format is read from the source and refined by the event name: a "Duel Commander" or "Centurion" event filed as
+Commander, or a "Premodern" event, gets its own format.
 
 For each event, the log shows the player count, the detected format and how the archetypes were assigned. The first
 import of a format also downloads its archetype rules, which takes a few seconds. The rules are then cached on the
@@ -98,34 +102,74 @@ The **Method** column shows how each deck was classified:
 
 | Badge | Meaning |
 |---|---|
+| house rule | matched one of your house rules |
 | rule | matched a community rule |
 | variant | matched a rule and one of its variants |
+| supplementary | matched a supplementary rule shipped with the plugin (see below) |
 | similarity | no rule matched; closest generic archetype ("fallback"), e.g. *Dimir Midrange* |
 | conflict | several rules matched; the simplest was chosen (configurable) |
 | unrecognized | nothing matched |
 | no list | no decklist available; the declared deck name is used if present |
-| declared | the format has no community rules; the declared deck name is used |
+| declared | the format has no community rules and no house rule matched; the declared deck name is used |
 | manual | set by hand |
 
-## Aliases and custom rules
+## House rules and aliases
 
-**Archetypes and rules** holds fixes that apply to every event.
+**Archetypes and rules** holds fixes that apply to every event. A deck is checked against four sets of rules, in
+this order:
 
-**Aliases**, one per line, as `Detected name => Displayed name`:
+1. **House rules**: your own definitions, saved in the WordPress database;
+2. **community rules** from [MTGOFormatData](https://github.com/Badaro/MTGOFormatData);
+3. **supplementary rules** shipped with the plugin, for recent archetypes the community rules do not cover yet
+   (for example *Jund Sacrifice* and *Boros Dwarves* in Standard). They only apply when no community rule matches;
+4. **similarity groups** ("fallbacks"), when no rule matches at all.
 
-```
-Simic Birthing Ritual => Simic Ritual
-Neobrand => Simic Neoform
-```
+### Archetype catalog
 
-**Custom rules** use the same JSON schema as
-[MTGOFormatData](https://github.com/Badaro/MTGOFormatData#archetypes) and take precedence over the community rules.
-The optional `Format` field limits a rule to one format. **Insert example** fills in a starting point:
+The **Archetype catalog** lists everything the plugin recognizes in a format, with the source of each archetype and
+its definition in plain words. Search by archetype or card name. The header shows when the community rules were
+downloaded; **Update community rules now** downloads them again (otherwise they refresh every 7 days).
+
+**Customize** copies a community or supplementary archetype into a new house rule. A house rule with the same name
+as a community archetype replaces it.
+
+### Writing a house rule
+
+Click **New rule** (or **Customize** in the catalog) to open the editor:
+
+- **Archetype name**: written as you want it displayed, e.g. *Boros Dwarves*.
+- **Format**: limits the rule to one format; *All formats* applies it everywhere.
+- **Put the deck colors before the name**: with *Aggro*, an Izzet deck becomes *Izzet Aggro*.
+- **Conditions**: a deck gets the archetype when it meets **every** condition. Each condition is a type plus a list
+  of cards:
+
+| Type | Meaning |
+|---|---|
+| Main deck: all of | every listed card is in the main deck |
+| Main deck: at least one of / at least two of | that many of the listed cards are in the main deck |
+| Main deck: none of | none of the listed cards is in the main deck |
+
+  The same types exist for the sideboard and for main deck or sideboard. Type a card name and pick it from the
+  Scryfall suggestions, or paste a list with one card per line. Names are checked on Scryfall: a red card is unknown,
+  a yellow one has a suggested spelling (click it to fix). Capitals, accents and the back face of double-faced cards
+  do not matter.
+
+**Test on saved tournaments** runs the rule alone on your 25 most recent saved tournaments of that format and shows
+how many decks it takes and how they are classified now. **Save rule** stores it.
+
+The **House rules** list shows every rule with its format, definition and status:
+- **active**: used for classification;
+- **off**: kept but not used (untick the checkbox to switch a rule off);
+- **ignored: errors**: the rule is saved but has a problem, which is shown under its name. Fix it with **Edit**.
+
+**Import JSON files…** adds rules in the MTGOFormatData schema, for example archetype files from that repository; a
+rule without a `Format` gets the format chosen in **Show**. **Download JSON** saves a backup. **Edit all house rules
+as JSON** opens every rule as text, which is also where variants can be changed:
 
 ```json
 [
   {
-    "Name": "DevotedDruidCombo",
+    "Name": "Devoted Combo",
     "Format": "Modern",
     "IncludeColorInName": false,
     "Conditions": [
@@ -136,26 +180,38 @@ The optional `Format` field limits a rule to one format. **Insert example** fill
 ]
 ```
 
-`Name` is written in PascalCase and split into words for display: `DevotedDruidCombo` becomes *Devoted Druid
-Combo*. With `IncludeColorInName: true`, the guild or shard name goes in front, so `Midrange` becomes
-*Dimir Midrange*. The condition types are listed in the [methodology](methodology.md#rules).
+`Disabled: true` switches a rule off. The condition types are listed in the [methodology](methodology.md#rules).
 
-**Options**
+After every change, a notice offers to **reclassify the saved tournaments**. Imported events keep their archetypes
+until then; manual fixes are never overwritten.
+
+### Aliases
+
+**Aliases**, one per line, as `Detected name => Displayed name`:
+
+```
+Simic Birthing Ritual => Simic Ritual
+Neobrand => Simic Neoform
+```
+
+### Options
+
 - **Conflict handling**: pick the simplest matching rule (default), or label the deck `Conflict(A,B)`.
 - **Bayesian win-rate prior**: the strength of the Beta(prior, prior) prior used for win-rate smoothing. The default
   is 10; 1 means almost no smoothing.
 - **Custom accent color**: the color of bars, lines and active controls. When it is off, the dashboard uses the
   WordPress theme's primary color, if the theme declares one, or a neutral blue.
-- **Reload community rules on the next import**: forces a fresh download of the rules.
 
-After changing aliases or rules, go to **Saved tournaments** and click **Reclassify all**.
+Click **Save aliases and options** to store them.
 
 ## Managing saved tournaments
 
-**Saved tournaments** lists every stored event with its number of unrecognized decks. For each event:
-- **Review**: opens the review page.
-- **Reclassify**: runs detection again with the current rules and aliases, keeping manual fixes.
-- **Delete**: removes the event file from the site. This cannot be undone.
+**Saved tournaments** lists every stored event with its number of unrecognized decks. Filter it by name or format,
+tick events (the header checkbox selects every visible one), then:
+- **Reclassify selected**: runs detection again with the current rules and aliases, keeping manual fixes;
+- **Delete selected**: removes the event files from the site. This cannot be undone.
+
+**Review** opens an event's review page.
 
 ## Publishing the dashboard
 
@@ -260,7 +316,8 @@ The **Metagame** tab also exports the full archetype table. Files are UTF-8 with
 | Symptom | Cause / fix |
 |---|---|
 | "GitHub request limit reached" | GitHub allows 60 anonymous API calls per hour per IP. A month search uses 2 and each new format 1. Wait, then try again. |
-| Many *unrecognized* decks in a fresh format | A new set introduced archetypes that the community rules do not cover yet. Add a custom rule or fix the decks by hand. |
+| Many *unrecognized* decks in a fresh format | A new set introduced archetypes that the community rules do not cover yet. Add a house rule (test it first) or fix the decks by hand. |
+| A house rule does not match anything | Check its status in the **House rules** list and the card names in the editor (red = unknown card). Remember that every condition must be met. |
 | Odd color names such as *WBRG Ponza* | Colors count both lands and spells, sideboard included, as in the original parser. Use an alias. |
 | Wrong rules for an old Standard event | Rules are cached per format. Use *Reload community rules on the next import*, then reclassify. |
 | The dashboard still looks like an older version after an update | Asset URLs change on every update, so this usually means a page cache. Clear your caching plugin or CDN cache once, then reload with Ctrl+F5. |

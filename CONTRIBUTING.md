@@ -15,7 +15,7 @@ Open an [issue](https://github.com/mattialopresti/mtg-meta/issues) and include:
 Archetype rules are not part of this repository. They come from
 [MTGOFormatData](https://github.com/Badaro/MTGOFormatData). If a deck is misclassified for **everyone**, the fix
 belongs there; contribute the rule upstream so every tool that uses it benefits. For a quick fix on your own site,
-use aliases or custom rules (see the [user guide](docs/user-guide.md#aliases-and-custom-rules)).
+use aliases or house rules (see the [user guide](docs/user-guide.md#house-rules-and-aliases)).
 
 Open an issue here if the plugin classifies a deck **differently from the original parser** with the same rules:
 that is a bug in the port.

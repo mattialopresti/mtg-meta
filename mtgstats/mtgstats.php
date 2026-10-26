@@ -3,7 +3,7 @@
  * Plugin Name:       MTG Stats
  * Plugin URI:        https://github.com/mattialopresti/mtg-meta
  * Description:       Metagame analytics for Magic: The Gathering tournaments. Imports events from Melee (directly or through MTGODecklistCache), detects archetypes automatically and publishes a dashboard with the [mtgstats] shortcode.
- * Version:           1.10.26
+ * Version:           1.10.2026.1
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Mattia Lopresti
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MTGSTATS_VERSION', '1.10.26');
+define('MTGSTATS_VERSION', '1.10.2026.1');
 define('MTGSTATS_FILE', __FILE__);
 
 final class MTGStats_Plugin
@@ -150,6 +150,55 @@ final class MTGStats_Plugin
         ));
     }
 
+    /** Keeps only the fields of an archetype rule (MTGOFormatData schema plus Format and Disabled), as plain text */
+    public static function clean_rule($rule, $variant = false)
+    {
+        if (!is_array($rule) || !isset($rule['Name']) || !is_scalar($rule['Name'])) {
+            return null;
+        }
+        $name = sanitize_text_field((string) $rule['Name']);
+        if ($name === '') {
+            return null;
+        }
+        $out = array('Name' => $name, 'IncludeColorInName' => !empty($rule['IncludeColorInName']), 'Conditions' => array());
+        if (isset($rule['Conditions']) && is_array($rule['Conditions'])) {
+            foreach ($rule['Conditions'] as $c) {
+                if (!is_array($c)) {
+                    continue;
+                }
+                $cards = isset($c['Cards']) ? $c['Cards'] : (isset($c['Card']) ? $c['Card'] : array());
+                if (is_string($cards)) {
+                    $cards = preg_split('/\r?\n/', $cards);
+                }
+                $list = array();
+                foreach ((array) $cards as $card) {
+                    $card = is_scalar($card) ? sanitize_text_field((string) $card) : '';
+                    if ($card !== '') {
+                        $list[] = $card;
+                    }
+                }
+                $out['Conditions'][] = array('Type' => isset($c['Type']) && is_scalar($c['Type']) ? sanitize_text_field((string) $c['Type']) : '', 'Cards' => $list);
+            }
+        }
+        if ($variant) {
+            return $out;
+        }
+        if (!empty($rule['Format']) && is_scalar($rule['Format'])) {
+            $out['Format'] = sanitize_text_field((string) $rule['Format']);
+        }
+        if (!empty($rule['Disabled'])) {
+            $out['Disabled'] = true;
+        }
+        if (!empty($rule['Variants']) && is_array($rule['Variants'])) {
+            $out['Variants'] = array();
+            foreach ($rule['Variants'] as $v) {
+                $cv = self::clean_rule($v, true);
+                $out['Variants'][] = $cv ? $cv : array('Name' => '', 'IncludeColorInName' => false, 'Conditions' => array());
+            }
+        }
+        return $out;
+    }
+
     public static function rest_get_settings()
     {
         return rest_ensure_response(self::settings());
@@ -168,11 +217,13 @@ final class MTGStats_Plugin
                 }
             }
         }
+        // House rules are kept even when incomplete, so the admin page can show their errors; only nameless ones are dropped
         $rules = array();
         if (isset($p['customRules']) && is_array($p['customRules'])) {
             foreach ($p['customRules'] as $rule) {
-                if (is_array($rule) && !empty($rule['Name']) && !empty($rule['Conditions']) && is_array($rule['Conditions'])) {
-                    $rules[] = $rule;
+                $clean = self::clean_rule($rule);
+                if ($clean) {
+                    $rules[] = $clean;
                 }
             }
         }
@@ -395,6 +446,7 @@ final class MTGStats_Plugin
                 'restUrl' => esc_url_raw(rest_url(self::NS)),
                 'nonce' => wp_create_nonce('wp_rest'),
                 'dataUrl' => $s['url'],
+                'assetsUrl' => plugins_url('assets/', MTGSTATS_FILE),
                 'settings' => self::settings(),
                 'version' => MTGSTATS_VERSION,
                 'lang' => self::language(get_user_locale()),

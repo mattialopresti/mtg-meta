@@ -139,23 +139,113 @@
     'Keruga, the Macrosage', 'Lurrus of the Dream-Den', 'Lutri, the Spellchaser', 'Obosh, the Preypiercer',
     'Umori, the Collector', 'Yorion, Sky Nomad', 'Zirda, the Dawnwaker'];
 
+  // Stessa regex del parser C#: spezza il PascalCase in parole
+  function splitPascal(name) {
+    return name.replace(/(?<=[A-Z])(?=[A-Z][a-z])|(?<=[^A-Z])(?=[A-Z])|(?<=[A-Za-z])(?=[^A-Za-z])/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
   function archetypeDisplayName(arch, color) {
-    var name = String(arch.Name || '').replace('Generic', '');
+    var raw = String(arch.Name || '');
+    // Le regole personalizzate scritte con spazi, trattini o numeri ("Mono-Green Devotion", "4c Omnath")
+    // si mostrano come sono state scritte; i nomi PascalCase ("DevotedDruidCombo") vengono spezzati come nel C#
+    if (arch._custom && /[^A-Za-z]/.test(raw.trim())) {
+      var prefix = arch.IncludeColorInName && COLOR_NAMES[color] ? splitPascal(COLOR_NAMES[color]) + ' ' : '';
+      return (prefix + raw).replace(/\s+/g, ' ').trim();
+    }
+    var name = raw.replace('Generic', '');
     if (arch.IncludeColorInName) name = (COLOR_NAMES[color] || '') + name;
-    // Stessa regex del parser C#: spezza il PascalCase in parole
-    name = name.replace(/(?<=[A-Z])(?=[A-Z][a-z])|(?<=[^A-Z])(?=[A-Z])|(?<=[A-Za-z])(?=[^A-Za-z])/g, ' ');
-    return name.replace(/\s+/g, ' ').trim();
+    return splitPascal(name);
+  }
+
+  var CONDITION_TYPES = ['InMainboard', 'InSideboard', 'InMainOrSideboard',
+    'OneOrMoreInMainboard', 'OneOrMoreInSideboard', 'OneOrMoreInMainOrSideboard',
+    'TwoOrMoreInMainboard', 'TwoOrMoreInSideboard', 'TwoOrMoreInMainOrSideboard',
+    'DoesNotContain', 'DoesNotContainMainboard', 'DoesNotContainSideboard'];
+  var TYPE_BY_KEY = {};
+  CONDITION_TYPES.forEach(function (type) { TYPE_BY_KEY[type.toLowerCase()] = type; });
+
+  // Chiave di confronto delle carte: maiuscole, accenti, spazi e apostrofi tipografici non contano;
+  // per le carte a due facce basta il nome del fronte (le fonti scrivono a volte solo quello)
+  function cardKey(name) { return frontFace(normCardName(name)).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+
+  /**
+   * Normalizza e valida una regola personalizzata. Ritorna { rule, errors }: con errori la regola non va usata.
+   * Accetta anche Type con maiuscole diverse, Cards come stringa (una carta per riga) e Card al singolare.
+   */
+  function normalizeRule(rule) {
+    var errors = [];
+    if (!rule || typeof rule !== 'object') return { rule: null, errors: [tr('The rule is not a JSON object.')] };
+    var normConditions = function (list, where) {
+      if (!Array.isArray(list) || !list.length) { errors.push(tr('{where}: no conditions.', { where: where })); return []; }
+      var out = [];
+      list.forEach(function (c, i) {
+        c = c || {};
+        var label = tr('{where}, condition {n}', { where: where, n: i + 1 });
+        var type = TYPE_BY_KEY[String(c.Type || '').replace(/\s+/g, '').toLowerCase()];
+        var cards = c.Cards !== undefined ? c.Cards : c.Card;
+        if (typeof cards === 'string') cards = cards.split(/\r?\n/);
+        cards = (Array.isArray(cards) ? cards : []).map(normCardName).filter(Boolean);
+        if (!type) errors.push(tr('{label}: unknown type “{type}”.', { label: label, type: c.Type || '' }));
+        if (!cards.length) errors.push(tr('{label}: no cards.', { label: label }));
+        else if (type && type.indexOf('TwoOrMore') === 0 && cards.length < 2) errors.push(tr('{label}: “two or more” needs at least two cards.', { label: label }));
+        // InMainboard, DoesNotContain e simili guardano una carta sola: con piu carte diventano una condizione per carta
+        if (type && !/OrMore/.test(type) && cards.length > 1) cards.forEach(function (card) { out.push({ Type: type, Cards: [card] }); });
+        else out.push({ Type: type || String(c.Type || ''), Cards: cards });
+      });
+      return out;
+    };
+    var name = String(rule.Name || '').replace(/\s+/g, ' ').trim();
+    var where = name || tr('Rule without a name');
+    if (!name) errors.push(tr('The rule has no name.'));
+    var out = { Name: name, IncludeColorInName: !!rule.IncludeColorInName, Conditions: normConditions(rule.Conditions, where) };
+    if (rule.Format && String(rule.Format).trim()) out.Format = String(rule.Format).trim();
+    if (Array.isArray(rule.Variants) && rule.Variants.length) {
+      out.Variants = rule.Variants.map(function (v, i) {
+        var vName = String((v && v.Name) || '').trim();
+        if (!vName) errors.push(tr('{where}: variant {n} has no name.', { where: where, n: i + 1 }));
+        return { Name: vName, IncludeColorInName: !!(v && v.IncludeColorInName), Conditions: normConditions(v && v.Conditions, where + ' / ' + (vName || i + 1)) };
+      });
+    }
+    return { rule: out, errors: errors };
+  }
+
+  // Condizioni precompilate con le chiavi delle carte, per non rifarle a ogni mazzo
+  function compileConditions(list) {
+    return (list || []).map(function (c) {
+      return { Type: TYPE_BY_KEY[String(c.Type || '').toLowerCase()] || c.Type, Cards: (c.Cards || []).map(cardKey) };
+    });
   }
 
   /**
    * bundle: { format, lands: {nome: 'WU'}, nonLands: {...}, archetypes: [...], fallbacks: [...] }
    * opts: { minSimilarity: 0.1, conflict: 'simpler' | 'none', aliases: {da: a}, customRules: [archetipi] }
+   * Le regole personalizzate non valide vengono scartate e finiscono in parser.invalidRules.
    */
   function ArchetypeParser(bundle, opts) {
     this.bundle = bundle;
     this.opts = Object.assign({ minSimilarity: 0.1, conflict: 'simpler', aliases: {} }, opts || {});
-    var custom = (this.opts.customRules || []).map(function (a) { return Object.assign({}, a, { _custom: true }); });
-    this.archetypes = custom.concat(bundle.archetypes || []).filter(function (a) { return a.Conditions && a.Conditions.length; });
+    var invalid = this.invalidRules = [];
+    var custom = [];
+    (this.opts.customRules || []).forEach(function (r) {
+      var res = normalizeRule(r);
+      if (res.errors.length) invalid.push({ rule: r, errors: res.errors });
+      else custom.push(Object.assign(res.rule, { _custom: true }));
+    });
+    var compile = function (a) {
+      var out = Object.assign({}, a, { _c: compileConditions(a.Conditions) });
+      if (a.Variants) out.Variants = a.Variants.map(function (v) { return Object.assign({}, v, { _custom: a._custom, _extra: a._extra, _c: compileConditions(v.Conditions) }); });
+      return out;
+    };
+    this.archetypes = custom.concat(bundle.archetypes || []).filter(function (a) { return a.Conditions && a.Conditions.length; }).map(compile);
+    // Regole supplementari (incluse nel plugin, per archetipi che le regole della community non coprono ancora):
+    // si provano solo se nessuna regola della community riconosce il mazzo
+    this.extras = [];
+    var extras = this.extras;
+    (this.opts.extraRules || []).forEach(function (r) {
+      var res = normalizeRule(r);
+      if (res.errors.length) invalid.push({ rule: r, errors: res.errors, extra: true });
+      else extras.push(compile(Object.assign(res.rule, { _custom: true, _extra: true })));
+    });
     this.fallbacks = (bundle.fallbacks || []).filter(function (a) { return a.CommonCards && a.CommonCards.length; })
       .map(function (f) { return Object.assign({}, f, { _set: new Set(f.CommonCards) }); });
   }
@@ -210,28 +300,38 @@
    * Ritorna { archetype, color, companion, method: 'rule'|'variant'|'fallback'|'conflict'|'unknown', candidates, similarity }
    */
   ArchetypeParser.prototype.detect = function (main, side) {
-    var mainSet = new Set(main.map(function (c) { return c.name; }));
-    var sideSet = new Set(side.map(function (c) { return c.name; }));
+    var mainSet = new Set(main.map(function (c) { return cardKey(c.name); }));
+    var sideSet = new Set(side.map(function (c) { return cardKey(c.name); }));
     var color = this.getColors(main, side);
     var companion = null;
-    COMPANIONS.forEach(function (n) { if (sideSet.has(n)) companion = n; });
+    COMPANIONS.forEach(function (n) { if (sideSet.has(cardKey(n))) companion = n; });
 
-    var matches = [];
-    this.archetypes.forEach(function (arch) {
-      if (!testConditions(arch.Conditions, mainSet, sideSet)) return;
-      var isVariant = false;
-      (arch.Variants || []).forEach(function (v) {
-        if (v.Conditions && v.Conditions.length && testConditions(v.Conditions, mainSet, sideSet)) {
-          isVariant = true;
-          matches.push({ arch: arch, variant: v, complexity: arch.Conditions.length + v.Conditions.length });
-        }
+    var collect = function (list) {
+      var found = [];
+      list.forEach(function (arch) {
+        if (!testConditions(arch._c, mainSet, sideSet)) return;
+        var isVariant = false;
+        (arch.Variants || []).forEach(function (v) {
+          if (v._c && v._c.length && testConditions(v._c, mainSet, sideSet)) {
+            isVariant = true;
+            found.push({ arch: arch, variant: v, complexity: arch.Conditions.length + v.Conditions.length });
+          }
+        });
+        if (!isVariant) found.push({ arch: arch, variant: null, complexity: arch.Conditions.length });
       });
-      if (!isVariant) matches.push({ arch: arch, variant: null, complexity: arch.Conditions.length });
-    });
+      return found;
+    };
+    var matches = collect(this.archetypes);
 
     // Le regole personalizzate (impostazioni del plugin) hanno priorita su quelle della community
     var custom = matches.filter(function (m) { return m.arch._custom; });
     if (custom.length) matches = custom;
+    // Nessuna regola: prova le supplementari prima di ripiegare sulla somiglianza
+    var extra = false;
+    if (!matches.length && this.extras.length) {
+      matches = collect(this.extras);
+      extra = matches.length > 0;
+    }
 
     var result = { color: color, companion: companion, candidates: [], similarity: 1 };
 
@@ -268,6 +368,8 @@
       } else {
         result.method = pick.variant ? 'variant' : 'rule';
       }
+      if (extra && result.method !== 'conflict') result.method = 'extra';
+      if (pick.arch._custom && !extra) result.custom = true;
       result.archetype = archetypeDisplayName(pick.variant || pick.arch, color);
     }
     return this.applyAlias(result);
@@ -452,15 +554,43 @@
     });
   }
 
-  var KNOWN_FORMATS = ['Standard', 'Pioneer', 'Modern', 'Legacy', 'Vintage', 'Pauper', 'Premodern', 'Commander', 'Explorer', 'Historic', 'Timeless', 'Alchemy'];
+  var KNOWN_FORMATS = ['Standard', 'Pioneer', 'Modern', 'Legacy', 'Vintage', 'Pauper', 'Premodern', 'Duel Commander', 'Centurion', 'Commander', 'Limited', 'Explorer', 'Historic', 'Timeless', 'Alchemy'];
+
+  // In ordine: i nomi piu specifici prima di quelli che li contengono (Premodern/Modern, Duel Commander/Commander)
+  var FORMAT_PATTERNS = [
+    ['Premodern', /pre-?modern/],
+    ['Duel Commander', /\bduel\s*(commander|com|edh)\b|french\s*edh/],
+    ['Centurion', /centurion/],
+    ['Standard', /standard/],
+    ['Pioneer', /pioneer/],
+    ['Modern', /modern/],
+    ['Legacy', /legacy/],
+    ['Vintage', /vintage/],
+    ['Pauper', /pauper/],
+    ['Commander', /commander|\bc?edh\b/],
+    ['Explorer', /explorer/],
+    ['Historic', /historic/],
+    ['Timeless', /timeless/],
+    ['Alchemy', /alchemy/],
+    ['Limited', /\blimited\b|\bsealed\b|\bdraft\b/]
+  ];
+  // Formati che il nome del torneo puo precisare (es. Formats "Commander" in un torneo di Duel Commander)
+  var FORMAT_REFINES = { Commander: ['Duel Commander', 'Centurion'], Modern: ['Premodern'] };
 
   function guessFormat(text) {
     var t = String(text || '').toLowerCase();
-    for (var i = 0; i < KNOWN_FORMATS.length; i++) {
-      if (t.indexOf(KNOWN_FORMATS[i].toLowerCase()) >= 0) return KNOWN_FORMATS[i];
+    for (var i = 0; i < FORMAT_PATTERNS.length; i++) {
+      if (FORMAT_PATTERNS[i][1].test(t)) return FORMAT_PATTERNS[i][0];
     }
-    if (/\bcedh\b|\bedh\b/.test(t)) return 'Commander';
     return '';
+  }
+
+  /** Formato di un torneo: quello dichiarato dalla fonte, precisato dal nome se serve */
+  function resolveFormat(declared, name) {
+    var guessed = guessFormat(name);
+    if (!declared) return guessed;
+    var known = guessFormat(declared) || String(declared);
+    return guessed && (FORMAT_REFINES[known] || []).indexOf(guessed) >= 0 ? guessed : known;
   }
 
   // ---------------------------------------------------------------------------
@@ -546,7 +676,7 @@
       };
     });
 
-    var format = meta.format || t.Formats || guessFormat(t.Name) || guessFormat(meta.file);
+    var format = resolveFormat(meta.format || t.Formats, t.Name) || guessFormat(meta.file);
     var date = isoDate(t.Date) || meta.date || '';
     var sourceId = meta.sourceId || ((t.Uri || '').match(/(\d+)\/?$/) || [])[1] || '';
     return {
@@ -571,7 +701,7 @@
   /** Assegna/aggiorna gli archetipi in un torneo compatto (sovrascritture manuali preservate se keepManual). */
   function classifyTournament(t, parser, opts) {
     opts = opts || {};
-    var summary = { rule: 0, variant: 0, fallback: 0, conflict: 0, unknown: 0, nolist: 0, manual: 0 };
+    var summary = { rule: 0, custom: 0, variant: 0, extra: 0, fallback: 0, conflict: 0, unknown: 0, nolist: 0, manual: 0 };
     var aliases = parser.opts.aliases || {};
     var declared = function (p) { return p.dn ? (aliases[p.dn] || p.dn) : null; };
     t.players.forEach(function (p) {
@@ -582,10 +712,10 @@
       }
       var deck = deckOf(t, p);
       var r = parser.detect(deck.main, deck.side);
-      p.a = r.archetype; p.col = r.color; p.m = r.method;
+      p.a = r.archetype; p.col = r.color; p.m = r.custom && r.method === 'rule' ? 'custom' : r.method;
       if (r.method === 'conflict') p.cand = r.candidates; else delete p.cand;
       if (r.method === 'unknown' && p.dn) { p.a = declared(p); }
-      summary[r.method] = (summary[r.method] || 0) + 1;
+      summary[p.m] = (summary[p.m] || 0) + 1;
     });
     t.arch = { folder: parser.bundle.folder, at: new Date().toISOString() };
     return summary;
@@ -859,16 +989,20 @@
   }
 
   return {
-    version: '1.10.26',
+    version: '1.10.2026.1',
     normCardName: normCardName,
     parseLenientJson: parseLenientJson,
     slugify: slugify,
     guessFormat: guessFormat,
+    resolveFormat: resolveFormat,
     KNOWN_FORMATS: KNOWN_FORMATS,
     qbeta: qbeta,
     pbeta: pbeta,
     ArchetypeParser: ArchetypeParser,
     archetypeDisplayName: archetypeDisplayName,
+    CONDITION_TYPES: CONDITION_TYPES,
+    normalizeRule: normalizeRule,
+    cardKey: cardKey,
     pickFormatFolder: pickFormatFolder,
     loadFormatBundle: loadFormatBundle,
     enrichColorsFromScryfall: enrichColorsFromScryfall,

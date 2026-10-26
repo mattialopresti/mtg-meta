@@ -41,7 +41,7 @@ downloads it when importing. Its use is subject to each source's own terms.
 | [MTGODecklistCache](https://github.com/Jiliac/MTGODecklistCache) | Tournament results, pairings and decklists collected from Melee and other sites | Jiliac (fork of Badaro's original) |
 | [MTG_decklistcache](https://github.com/fbettega/MTG_decklistcache) | MTGO tournament results and decklists, in the same format | fbettega |
 | [melee.gg](https://melee.gg) | Public tournament pages (direct import) | Melee |
-| [Scryfall API](https://scryfall.com/docs/api) | Colors and types of cards missing from the rule data | Scryfall |
+| [Scryfall API](https://scryfall.com/docs/api) | Colors and types of cards missing from the rule data; card name suggestions and spelling checks in the rule editor | Scryfall |
 
 When using these sources:
 
@@ -54,6 +54,13 @@ When using these sources:
   administrator's explicit action, at most 4 at a time. Please respect Melee's terms of service when importing.
 - **Tournament data includes player names** as published by the organizers. If you publish statistics, honor any
   removal request from a player.
+
+## Bundled rule data
+
+`mtgstats/assets/rules-extra.json` holds supplementary archetype rules written for this plugin in the
+MTGOFormatData schema, from the analysis of September-October 2026 events. The *Jeskai Lurrus* Vintage rule comes from
+[IamActuallyLvL1's fork of MTGOFormatData](https://github.com/IamActuallyLvL1/MTGOFormatData), which maintains the
+Vintage rules.
 
 ## Trademarks
 

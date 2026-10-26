@@ -34,6 +34,10 @@ Each archetype is a JSON file with a list of `Conditions`. Every condition must 
 | `TwoOrMoreInMainboard` / `…InSideboard` / `…InMainOrSideboard` | at least two *different* listed cards are present |
 | `DoesNotContain` / `DoesNotContainMainboard` / `DoesNotContainSideboard` | the first listed card is absent |
 
+Card names are compared ignoring letter case, accents, typographic apostrophes and the back face of double-faced
+cards. In house and supplementary rules, a single-card condition (`InMainboard`, `DoesNotContain`, …) with several
+cards is read as one condition per card, so every listed card must be present (or absent).
+
 An archetype can have `Variants`, which use the same structure. A variant is tested only when its parent matches,
 and the variant's name replaces the parent's.
 
@@ -68,11 +72,14 @@ review page. Alternatively, the plugin settings can label the deck `Conflict(A,B
 ### Customization
 
 The processing order is:
-1. **Custom rules** from the plugin settings. When one of them matches, community rules are ignored for that deck.
-2. Community rules, then fallbacks.
-3. **Aliases** rename the result.
-4. If the deck is still Unknown, or has no decklist, the **declared** deck name from Melee is used, when available.
-5. **Manual overrides** (method `manual`) are never touched by re-classification.
+1. **House rules** from the plugin settings. When one of them matches, community rules are ignored for that deck.
+2. **Community rules**.
+3. **Supplementary rules** (`assets/rules-extra.json`), only when no community rule matched. They cover archetypes
+   that appeared after the last MTGOFormatData update and are marked *supplementary* on the review page.
+4. **Fallbacks** (similarity), when no rule matched at all.
+5. **Aliases** rename the result.
+6. If the deck is still Unknown, or has no decklist, the **declared** deck name from Melee is used, when available.
+7. **Manual overrides** (method `manual`) are never touched by re-classification.
 
 ### Validation
 

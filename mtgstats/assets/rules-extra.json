@@ -1,0 +1,496 @@
+{
+  "updated": "2026-10-26",
+  "basedOn": "MTGOFormatData 2026-06-30",
+  "about": "Archetypes missing from the community rules, found in September-October 2026 events (Jeskai Lurrus comes from the IamActuallyLvL1 fork of MTGOFormatData, which maintains the Vintage rules). Used only when no community rule recognizes a deck.",
+  "formats": {
+    "Standard": [
+      {
+        "Name": "Jund Sacrifice",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Greedy Freebooter",
+              "Biotech Specialist",
+              "Umbral Collar Zealot",
+              "Obsessive Pursuit",
+              "The Sackville-Bagginses",
+              "Gene Pollinator",
+              "Lively Dirge"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Boros Dwarves",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Kíli the Resourceful",
+              "Dwarven Mauler",
+              "Thorin, Mountain-king",
+              "Dáin's Company",
+              "Dwalin, Weaponmaster"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Dimir Uldaros",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Uldaros Theorix"
+            ]
+          },
+          {
+            "Type": "OneOrMoreInMainboard",
+            "Cards": [
+              "Deceit",
+              "Superior Spider-Man",
+              "Overlord of the Balemurk"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Izzet Fling",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Callous Sell-Sword"
+            ]
+          },
+          {
+            "Type": "OneOrMoreInMainboard",
+            "Cards": [
+              "Wild Ride",
+              "Ancestral Anger",
+              "Full Bore"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Azorius Artifacts",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Simulacrum Synthesizer",
+              "Repurposing Bay",
+              "Cryogen Relic",
+              "United Battlefront",
+              "The Fire Crystal"
+            ]
+          }
+        ]
+      }
+    ],
+    "Modern": [
+      {
+        "Name": "Devoted Combo",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Devoted Druid"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Vizier of Remedies"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Esper Ketramose",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Ketramose, the New Dawn"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Hollow One",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Hollow One"
+            ]
+          },
+          {
+            "Type": "OneOrMoreInMainboard",
+            "Cards": [
+              "Burning Inquiry",
+              "Faithless Looting",
+              "Marauding Mako"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Ritual",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Birthing Ritual"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Leyline",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Leyline of Abundance"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Ouroboroid"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Devoted Druid"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Aggro",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Nethergoyf"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Moonshadow"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Loki",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Loki, God of Mischief"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Affinity",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Kappa Cannoneer",
+              "Pinnacle Emissary",
+              "Weapons Manufacturing",
+              "Claws of Gix"
+            ]
+          },
+          {
+            "Type": "DoesNotContainMainboard",
+            "Cards": [
+              "Loki, God of Mischief"
+            ]
+          }
+        ]
+      }
+    ],
+    "Legacy": [
+      {
+        "Name": "Tempo",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Force of Will"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Tamiyo, Inquisitive Student"
+            ]
+          },
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Daze",
+              "Stifle",
+              "Wasteland",
+              "Dragon's Rage Channeler",
+              "Phelia, Exuberant Shepherd",
+              "Quantum Riddler",
+              "Cori-Steel Cutter"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Mystic Forge Combo",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "The One Ring"
+            ]
+          },
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Grim Monolith",
+              "Basalt Monolith",
+              "Manifold Key",
+              "Kozilek's Command",
+              "Karn, the Great Creator"
+            ]
+          }
+        ]
+      }
+    ],
+    "Vintage": [
+      {
+        "Name": "Jeskai Lurrus",
+        "IncludeColorInName": false,
+        "Conditions": [
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Goblin Engineer"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Oswald Fiddlebender"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Paradoxical Outcome"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Oath of Druids"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Underworld Breach"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Ocelot Pride"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Phyrexian Dreadnought"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Doomsday"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Time Vault"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Underground Sea"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Tropical Island"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Volcanic Island"
+            ]
+          },
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Tundra"
+            ]
+          },
+          {
+            "Type": "InSideboard",
+            "Cards": [
+              "Lurrus of the Dream-Den"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Natural Order",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Natural Order"
+            ]
+          },
+          {
+            "Type": "OneOrMoreInMainboard",
+            "Cards": [
+              "Mole Man, Moloid Master",
+              "Badgermole Cub",
+              "Green Sun's Zenith"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Midrange",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Moonshadow",
+              "Emperor of Bones",
+              "Super Shredder",
+              "Dauthi Voidwalker",
+              "Arena of Glory"
+            ]
+          },
+          {
+            "Type": "DoesNotContain",
+            "Cards": [
+              "Mishra's Workshop"
+            ]
+          }
+        ]
+      }
+    ],
+    "Pioneer": [
+      {
+        "Name": "Sacrifice",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Greedy Freebooter",
+              "Biotech Specialist",
+              "The Sackville-Bagginses",
+              "Oni-Cult Anvil",
+              "Shrapnel Blast",
+              "Experimental Synthesizer"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Control",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "TwoOrMoreInMainboard",
+            "Cards": [
+              "Cleansing Wildfire",
+              "Erode",
+              "Demolition Field",
+              "Day of Judgment",
+              "Get Lost",
+              "Avengers Disassembled"
+            ]
+          }
+        ]
+      }
+    ],
+    "Pauper": [
+      {
+        "Name": "Pestilence",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Pestilence"
+            ]
+          },
+          {
+            "Type": "OneOrMoreInMainboard",
+            "Cards": [
+              "Cauldron Familiar",
+              "Khalni Garden",
+              "Fanatical Offering"
+            ]
+          }
+        ]
+      },
+      {
+        "Name": "Petitioners",
+        "IncludeColorInName": true,
+        "Conditions": [
+          {
+            "Type": "InMainboard",
+            "Cards": [
+              "Persistent Petitioners"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

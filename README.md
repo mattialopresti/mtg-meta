@@ -30,7 +30,11 @@ link to a published matchup matrix in a few minutes.
   Standard, Legacy, Vintage and Pauper.
 - Colors are worked out from lands and spells. For cards too new to be in the rules, colors come from
   [Scryfall](https://scryfall.com).
-- Aliases, custom rules and per-player manual overrides. Overrides survive re-classification.
+- Supplementary rules shipped with the plugin for archetypes the community rules do not cover yet (e.g. *Jund
+  Sacrifice* and *Boros Dwarves* in Standard, *Devoted Combo* in Modern).
+- House rules with a visual editor: card suggestions and spelling checks from Scryfall, a test on your saved
+  tournaments, and a catalog of every archetype a format recognizes.
+- Aliases and per-player manual overrides. Overrides survive re-classification.
 - In tests on a 928-deck Modern event, 98% of decks were classified, in 25 ms.
 
 **Dashboard**
@@ -72,7 +76,7 @@ link to a published matchup matrix in a few minutes.
 
 ## Installation
 
-1. Download `mtgstats-1.10.26.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
+1. Download `mtgstats-1.10.2026.1.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**, choose the zip, then click **Install** and **Activate**.
 3. Open **MTG Stats** in the admin menu. On the **Import** tab, pick a month, click **Search tournaments** and import a
    few events.
@@ -123,7 +127,7 @@ from the web server.
 
 ## Documentation
 
-- [User guide](docs/user-guide.md): importing, reviewing archetypes, aliases and custom rules, shortcode, dashboard.
+- [User guide](docs/user-guide.md): importing, reviewing archetypes, house rules and aliases, shortcode, dashboard.
 - [Methodology](docs/methodology.md): how archetypes are detected and how every statistic is computed.
 - [Architecture](docs/architecture.md): data flow, file formats, REST API, security model.
 - [Contributing](CONTRIBUTING.md)
@@ -137,8 +141,8 @@ from the web server.
   from the standings. Leagues only publish 5-0 decklists: they show what is played, but their win rates are
   inflated.
 - **topdeck.gg and Manatraders** are no longer updated in the cache (last events in April 2025 and November 2024).
-- **Formats without community rules** (Premodern, Commander, …) fall back to the deck names players declared on
-  Melee, plus your aliases and manual fixes.
+- **Formats without community rules** (Premodern, Duel Commander, Commander, …) use your house rules, then the deck
+  names players declared on Melee, plus your aliases and manual fixes.
 - **Player identity is name-based.** Namesakes merge, and players whose name is spelled differently split.
 
 ## Credits and license

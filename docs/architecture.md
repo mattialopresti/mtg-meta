@@ -36,7 +36,8 @@ mtgstats/
     ├── melee.js          Direct melee.gg importer (pages + DataTables endpoints)
     ├── advanced.js       Positioning, trends, variants, card impact, player rating model
     ├── viewer.js/.css    Public dashboard (SVG charts, tabs, tables, archetype profile, theme adaptation)
-    └── admin.js/.css     Admin panel (import, review, rules, preview)
+    ├── admin.js/.css     Admin panel (import, review, house rules and archetype catalog, preview)
+    └── rules-extra.json  Supplementary archetype rules for archetypes missing from MTGOFormatData
 ```
 
 The JavaScript files are UMD modules: in the browser they attach `MTGStatsI18n`, `MTGStatsCore`, `MTGStatsMelee`
@@ -45,7 +46,7 @@ and `MTGStatsAdvanced` to `window`, and in Node `require()` works. Dependencies 
 
 Scripts are registered in `register_assets()`. WordPress enqueues `viewer.js` and its dependencies only on pages
 that contain the shortcode, and `admin.js` only on the plugin's admin page. Each asset's version string is the
-plugin version followed by the file's modification time (`?ver=1.10.26.<mtime>`). Browsers and caching plugins
+plugin version followed by the file's modification time (`?ver=1.10.2026.1.<mtime>`). Browsers and caching plugins
 therefore pick up updated files right after an upgrade, even when the plugin version number does not change.
 
 ## Data flow
@@ -60,6 +61,7 @@ admin.js
   ├─ core.compactFromCache()          → compact tournament (no archetypes yet)
   ├─ getBundle(format)                → uploads/mtgstats/rules/<format>.json if newer than 7 days,
   │                                     otherwise MTGOFormatData via GitHub, then POST /rules/<format>
+  ├─ getExtras()                      → assets/rules-extra.json (supplementary rules, shipped with the plugin)
   ├─ core.enrichColorsFromScryfall()  → colors of cards missing from card_colors.json
   ├─ core.classifyTournament()        → archetype, colors and method per player
   └─ POST /mtgstats/v1/tournaments    → t/<id>.json + index.json entry
@@ -227,12 +229,18 @@ Stored in the `mtgstats_settings` option (not autoloaded):
 ```json
 {
   "aliases": { "Simic Birthing Ritual": "Simic Ritual" },
-  "customRules": [ { "Name": "…", "Format": "Modern", "IncludeColorInName": false, "Conditions": [ … ] } ],
+  "customRules": [ { "Name": "…", "Format": "Modern", "IncludeColorInName": false, "Conditions": [ … ], "Disabled": false } ],
   "conflict": "simpler",
   "prior": 10,
   "accent": "#2a78d6"
 }
 ```
+
+`customRules` holds the house rules. The server keeps only the rule fields (`Name`, `Format`, `IncludeColorInName`,
+`Conditions`, `Variants`, `Disabled`) as plain text, and drops rules without a name; incomplete rules are kept so the
+admin panel can show their errors. `core.normalizeRule()` validates them before use: it accepts condition types in
+any letter case and card lists as text, splits single-card conditions with several cards into one condition per
+card, and reports readable errors. Invalid rules are skipped at classification time.
 
 The admin panel uses `aliases`, `customRules` and `conflict` at classification time, so they are not needed by the
 dashboard. `prior` and `accent` (empty = use the theme's color) are the defaults for the shortcode's `data-prior` and
