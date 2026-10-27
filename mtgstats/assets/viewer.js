@@ -1705,12 +1705,14 @@
         Adv.shares(fieldRef.rows), playable.map((_, i) => i))) : [];
       const rankOf = new Map(rank.map((r) => [r.archetype, r]));
       const best = rank[0];
+      // With a single version in the comparison, "best in 100% of simulations" says nothing: it is the only candidate
+      const alone = rank.length === 1;
 
       body.append(this.kpis([
         { label: t('Share of the field'), value: fmt.pct(fam.share), sub: t('{n} players', { n: fmt.int(fam.players) }) },
         { label: t('Win rate'), value: fmt.pct(fam.wr), sub: t('Matches: {rec}', { rec: fmt.record(fam) }) },
         { label: t('Lists'), value: fmt.int(D.lists), sub: t(F.labels.length === 1 ? '{n} version' : '{n} versions', { n: F.labels.length }) },
-        best ? { label: t('Best option'), value: short(best.archetype), small: true, sub: t('best in {p} of simulations', { p: fmt.pct(best.pBest, 0) }) } : null
+        best ? { label: t('Best option'), value: short(best.archetype), small: true, sub: alone ? t('the only version with enough matches') : t('best in {p} of simulations', { p: fmt.pct(best.pBest, 0) }) } : null
       ]));
 
       // 1. Which version to play
@@ -1728,9 +1730,11 @@
         const notes = [];
         if (rank.length > 1 && best.pBest < 0.6) notes.push(t('The margin is narrow: the versions are close.'));
         if (m.w + m.l < 30) notes.push(t('Few matches so far: read it as a hint.'));
+        const vars = { v: short(best.archetype), wr: fmt.pct(best.expected), lo: fmt.pct(best.lo, 0), hi: fmt.pct(best.hi, 0), p: fmt.pct(best.pBest, 0) };
         s1.body.append(h('p', { class: 'mtgs-focus-reco' },
-          t('Against this field the best option is {v}: expected win rate {wr} (90%: {lo} – {hi}), best in {p} of the simulations.',
-            { v: short(best.archetype), wr: fmt.pct(best.expected), lo: fmt.pct(best.lo, 0), hi: fmt.pct(best.hi, 0), p: fmt.pct(best.pBest, 0) }),
+          alone
+            ? t('Only {v} has enough matches to be compared: expected win rate against this field {wr} (90%: {lo} – {hi}).', vars)
+            : t('Against this field the best option is {v}: expected win rate {wr} (90%: {lo} – {hi}), best in {p} of the simulations.', vars),
           notes.length ? ` ${notes.join(' ')}` : ''));
       } else {
         s1.body.append(h('p', { class: 'mtgs-muted' }, t('Not enough matches to compare the versions: widen the period.')));
@@ -1746,7 +1750,7 @@
         { key: 'pBest', label: t('Best in'), num: true, fmt: (v) => fmt.pct(v, 0) }
       ], F.labels.map((v) => {
         const m = byName.get(v), r = rankOf.get(v);
-        return { name: short(v), lists: F.decks[v] || 0, share: m ? m.share : null, m, matches: m ? m.matches : null, wr: m ? m.wr : null, expected: r ? r.expected : null, pBest: r ? r.pBest : null };
+        return { name: short(v), lists: F.decks[v] || 0, share: m ? m.share : null, m, matches: m ? m.matches : null, wr: m ? m.wr : null, expected: r ? r.expected : null, pBest: r && !alone ? r.pBest : null };
       }), { sortKey: 'expected', limit: 12 }));
       if (ready && leftOut.length) {
         s1.body.append(h('p', { class: 'mtgs-footnote' }, t('Left out of the comparison, with fewer than {n} matches: {list}.', { n: MIN_MATCHES, list: leftOut.map(short).join(', ') })));
@@ -1757,7 +1761,7 @@
           const m = byName.get(r.archetype);
           return {
             label: short(r.archetype), value: r.expected, lo: r.lo, hi: r.hi, mark: m.wrMean, text: fmt.pct(r.expected),
-            tip: { title: short(r.archetype), rows: [[t('Expected'), fmt.pct(r.expected)], [t('90% interval'), `${fmt.pct(r.lo)} – ${fmt.pct(r.hi)}`], [t('Best in'), fmt.pct(r.pBest, 0)], [t('Observed'), `${fmt.pct(m.wrObs)} (${fmt.record(m)})`]] }
+            tip: { title: short(r.archetype), rows: [[t('Expected'), fmt.pct(r.expected)], [t('90% interval'), `${fmt.pct(r.lo)} – ${fmt.pct(r.hi)}`], [t('Best in'), alone ? '–' : fmt.pct(r.pBest, 0)], [t('Observed'), `${fmt.pct(m.wrObs)} (${fmt.record(m)})`]] }
           };
         }), { aria: t('Which version to play'), step: 0.05, min: 0.4, max: 0.6 }));
       }

@@ -153,7 +153,7 @@ final class MTGStats_Plugin
         ));
     }
 
-    /** Where the data and the assets live, for the headless importer (tools/sync.mjs) */
+    /** Where the data and the assets live, for the headless importer (tools/sync.js) */
     public static function rest_status()
     {
         self::ensure_storage();

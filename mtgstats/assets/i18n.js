@@ -562,6 +562,8 @@
     '{n} versions': '{n} versioni',
     'Best option': 'Scelta migliore',
     'best in {p} of simulations': 'probabilità {p} di essere la migliore',
+    'the only version with enough matches': 'l’unica versione con abbastanza match',
+    'Only {v} has enough matches to be compared: expected win rate against this field {wr} (90%: {lo} – {hi}).': 'Solo {v} ha abbastanza match per il confronto: winrate atteso contro questo meta {wr} (90%: {lo} – {hi}).',
     'Which version to play': 'Quale versione giocare',
     'Expected win rate against the chosen field, and how often each version comes out best.': 'Winrate atteso contro il meta scelto, e quanto spesso ogni versione risulta la migliore.',
     'For each version: the estimated matchups against the top {n} archetypes, weighted by their share of the reference field (Bayesian estimate, 1,000 simulations). “Best in” is the share of simulations in which the version has the highest expected win rate. Dot = estimate, line = 90% interval, tick = observed win rate. League events with only 5-0 lists ({k} in the selection) count for the lists, not for win rates.': 'Per ogni versione: i matchup stimati contro i primi {n} archetipi, pesati per la loro presenza nel meta di riferimento (stima bayesiana, 1.000 simulazioni). “Prob. migliore” è la quota di simulazioni in cui la versione ha il winrate atteso più alto. Punto = stima, linea = intervallo al 90%, tacca = winrate osservato. Le leghe con sole liste 5-0 ({k} nella selezione) contano per le liste, non per i winrate.',
