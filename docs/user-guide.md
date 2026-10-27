@@ -12,6 +12,7 @@ label in this guide appears in Italian. Labels are quoted here in English.
 - [Reviewing archetypes](#reviewing-archetypes)
 - [House rules and aliases](#house-rules-and-aliases)
 - [Managing saved tournaments](#managing-saved-tournaments)
+- [Deck focus](#deck-focus)
 - [Publishing the dashboard](#publishing-the-dashboard)
 - [Reading the dashboard](#reading-the-dashboard)
 - [Exporting data](#exporting-data)
@@ -25,7 +26,8 @@ label in this guide appears in Italian. Labels are quoted here in English.
 | **Dashboard** | site visitors | any page containing `[mtgstats]` | charts and statistics |
 
 Importing runs in the administrator's browser. Keep the admin page open until the log shows **saved ✓** for every
-event.
+event. To import new events every night without opening the admin, see
+[Automatically, every night](#automatically-every-night).
 
 ## Installing
 
@@ -69,6 +71,43 @@ Commander, or a "Premodern" event, gets its own format.
 For each event, the log shows the player count, the detected format and how the archetypes were assigned. The first
 import of a format also downloads its archetype rules, which takes a few seconds. The rules are then cached on the
 server for 7 days.
+
+### Automatically, every night
+
+The repository includes a GitHub Actions workflow, [`.github/workflows/sync.yml`](../.github/workflows/sync.yml). It
+runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:30 UTC. The importer does what
+**Import selected** does, with your house rules and aliases, and saves the events through the plugin's REST API.
+
+1. In WordPress, open **Users → Profile → Application Passwords**, type a name such as `MTG Stats sync`, click
+   **Add New Application Password** and copy the password. The user must be an administrator.
+2. In your copy of the repository on GitHub, open **Settings → Secrets and variables → Actions** and add:
+   - variable `MTGSTATS_URL`: the site address, for example `https://example.com`;
+   - secret `MTGSTATS_USER`: the WordPress user name;
+   - secret `MTGSTATS_APP_PASSWORD`: the password from step 1.
+3. Optionally, add these variables:
+
+   | Variable | Default | Effect |
+   |---|---|---|
+   | `MTGSTATS_FORMATS` | `Modern` | formats to import, comma separated |
+   | `MTGSTATS_SOURCES` | `melee.gg,mtgo.com` | cache sources |
+   | `MTGSTATS_DAYS` | `30` | how many days back to look |
+   | `MTGSTATS_MAX` | `40` | maximum number of events per run; the rest waits for the next run |
+   | `MTGSTATS_LEAGUES` | `0` | `1` also imports MTGO Leagues, which only publish 5-0 lists |
+   | `MTGSTATS_REST` | `<site>/wp-json/mtgstats/v1` | REST address, for sites without pretty permalinks: `<site>/?rest_route=/mtgstats/v1` |
+
+4. Open **Actions → Sync tournaments → Run workflow**. Tick *dry run* the first time: the log lists what would be
+   imported, without saving anything. GitHub starts the nightly runs only once the workflow is on the repository's
+   default branch.
+
+Leagues are left out by default. Their 5-0 lists would inflate every win rate on the Metagame, Matchups and
+Positioning tabs. The deck focus tab handles them separately (see [Deck focus](#deck-focus)), so import them only if
+you want more lists for that tab.
+
+The importer also runs from any computer with Node 18 or later:
+
+```bash
+MTGSTATS_URL=https://example.com MTGSTATS_USER=admin MTGSTATS_APP_PASSWORD="xxxx xxxx xxxx xxxx" node tools/sync.js
+```
 
 ### Directly from Melee
 
@@ -213,6 +252,46 @@ tick events (the header checkbox selects every visible one), then:
 
 **Review** opens an event's review page.
 
+## Deck focus
+
+A deck focus follows one deck closely. Take Omnath in Modern as an example. The community rules split its lists
+between several archetypes; a focus gathers every list that plays Omnath, then splits them into the versions you
+define, for instance *Ritual* (Birthing Ritual), *Paradox / W6* (Way of the Paradox or Wrenn and Six) and
+*Elementals* (Risen Reef).
+
+**Setting it up.** Open **MTG Stats → Deck focus**.
+
+1. Click **New focus**, or **Add preset: Omnath (Modern)** to start from the definition above.
+2. Fill in:
+   - **Deck name**: shown as the tab name;
+   - **Format**;
+   - **Key cards**: a list belongs to the deck when its main deck plays at least one of them.
+3. Add the **versions**. Each version is a rule with the same conditions as house rules, edited in the same editor.
+   Versions are tried in order and the first match wins, so put the most specific ones first with the ↑ ↓ buttons.
+4. Click **Test on saved tournaments**. You see how many lists each version takes, and how the plugin classifies them
+   today.
+5. Click **Save focus**, then add its shortcode to a page, for example `[mtgstats focus="omnath"]`.
+
+Lists that meet no version are shown as *other lists*. When enough of them look alike, the dashboard shows the group
+and its signature cards: a hint that a new version has appeared.
+
+**Reading the focus tab.**
+- **Which version to play.** Each version's expected win rate against the field you choose (whole selection, Day 2,
+  Top 8, latest event), with the probability that it is the best choice. The recommendation above the chart warns
+  when the versions are close or the matches are few. Versions with fewer than 20 matches are left out of the
+  comparison.
+- **Best version by matchup.** For each of the most played archetypes, the estimated win rate of every version. The
+  outlined cell is the best version against that deck: useful to pick a version for a known local metagame.
+- **Version details.** Pick a version to see:
+  - its average list, ready to copy;
+  - *What is changing*: the cards gaining or losing ground in the last 21 days, with new ones marked;
+  - its variants and card impact;
+  - its best results.
+- **Versions over time.** Each version's share of the deck's lists, week by week.
+
+MTGO League events, which only publish 5-0 lists, count for the lists and for *Versions over time*, but not for win
+rates, shares and matchups.
+
 ## Publishing the dashboard
 
 Add a **Shortcode** block containing `[mtgstats]` to any page or post. Available attributes:
@@ -222,7 +301,8 @@ Add a **Shortcode** block containing `[mtgstats]` to any page or post. Available
 | `format` | `format="Pauper"` | initial format |
 | `days` | `days="60"` | initial period (`7`, `30`, `90`, any number of days, `all`) |
 | `tournaments` | `tournaments="melee-gg-405590-2026-09-05"` | fixed selection; hides the format, period and event pickers |
-| `tabs` | `tabs="meta,mu,pos"` | show only some tabs: `meta, mu, pos, trend, conv, cards, players, data` |
+| `tabs` | `tabs="meta,mu,pos"` | show only some tabs: `focus, meta, mu, pos, trend, conv, cards, players, data` |
+| `focus` | `focus="omnath"` | adds the tab of a [deck focus](#deck-focus), first in line, and starts on its format |
 | `theme` | `theme="dark"` | `auto` (default) follows the page background; `light` and `dark` force a theme |
 | `accent` | `accent="#c2412d"` | accent color for this page; overrides the setting and the theme color |
 | `prior` | `prior="5"` | smoothing prior for this page |
@@ -278,6 +358,7 @@ a bar, a dot, a table row, a matrix header or a panel title in Trends. The profi
 - **Keyboard.** Arrow keys move between tabs, Tab moves through chart rows, Enter opens the profile.
 
 **Tab by tab**
+- **Deck focus** (when the shortcode has `focus`): see [Deck focus](#deck-focus).
 - **Matchups.** Switch between *Observed* and *Estimated*. A small dot in a cell marks a clear-cut matchup, where the
   favorite is favored with at least 95% probability.
 - **Positioning.**
@@ -325,4 +406,8 @@ The **Metagame** tab also exports the full archetype table. Files are UTF-8 with
 | Dashboard colors clash with the site | Set *Custom accent color* in the options, or `accent="#…"` in the shortcode. If the page background is an image or a gradient, set `theme="light"` or `theme="dark"`. |
 | Wrong interface language | The language follows the WordPress site language. Force it with `lang="en"` or `lang="it"`. |
 | Direct Melee import fails | Check that the event is public and that your server can reach `melee.gg`. If Melee changed its site, the importer needs updating; please open an issue. |
+| The scheduled import fails with HTTP 401 | Check the user name and the Application Password. Some hosts strip the `Authorization` header before PHP sees it: ask the host, or add `SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1` to `.htaccess`. |
+| The scheduled import finds no events | Check `MTGSTATS_FORMATS` and `MTGSTATS_DAYS`. Run the workflow with *dry run* to see what it considers. |
+| The focus tab does not appear | The `focus` attribute must match the id in the **Deck focus** list (shown in its shortcode). |
+| A version shows no win rate | Its lists come only from MTGO Leagues, or it has fewer than 20 matches in the selection. Widen the period. |
 | Dashboard shows "Data unavailable" | `wp-content/uploads/mtgstats/index.json` is missing or blocked. Open **MTG Stats** in the admin once to recreate the folder. |

@@ -116,7 +116,7 @@ final class MTGStats_Plugin
 
     public static function settings()
     {
-        $defaults = array('aliases' => array(), 'customRules' => array(), 'conflict' => 'simpler', 'prior' => 10, 'accent' => '');
+        $defaults = array('aliases' => array(), 'customRules' => array(), 'focus' => array(), 'conflict' => 'simpler', 'prior' => 10, 'accent' => '');
         $s = get_option(self::OPT, array());
         return array_merge($defaults, is_array($s) ? $s : array());
     }
@@ -148,6 +148,67 @@ final class MTGStats_Plugin
         register_rest_route(self::NS, '/melee', array(
             'methods' => 'POST', 'callback' => array(__CLASS__, 'rest_melee_proxy'), 'permission_callback' => array(__CLASS__, 'can_manage'),
         ));
+        register_rest_route(self::NS, '/status', array(
+            'methods' => 'GET', 'callback' => array(__CLASS__, 'rest_status'), 'permission_callback' => array(__CLASS__, 'can_manage'),
+        ));
+    }
+
+    /** Where the data and the assets live, for the headless importer (tools/sync.mjs) */
+    public static function rest_status()
+    {
+        self::ensure_storage();
+        $s = self::storage();
+        return rest_ensure_response(array(
+            'version' => MTGSTATS_VERSION,
+            'dataUrl' => $s['url'],
+            'assetsUrl' => plugins_url('assets/', MTGSTATS_FILE),
+        ));
+    }
+
+    /** Keeps the fields of the focus definitions (id, name, format, key cards, version rules), as plain text */
+    public static function clean_focus($list)
+    {
+        $out = array();
+        $ids = array();
+        foreach ((array) $list as $f) {
+            if (!is_array($f) || !isset($f['name']) || !is_scalar($f['name'])) {
+                continue;
+            }
+            $name = sanitize_text_field((string) $f['name']);
+            $id = sanitize_key((isset($f['id']) && is_scalar($f['id']) && (string) $f['id'] !== '') ? (string) $f['id'] : $name);
+            if ($name === '' || $id === '' || isset($ids[$id])) {
+                continue;
+            }
+            $ids[$id] = true;
+            $raw = isset($f['cards']) ? $f['cards'] : array();
+            if (is_string($raw)) {
+                $raw = preg_split('/\r?\n/', $raw);
+            }
+            $cards = array();
+            foreach ((array) $raw as $card) {
+                $card = is_scalar($card) ? sanitize_text_field((string) $card) : '';
+                if ($card !== '') {
+                    $cards[] = $card;
+                }
+            }
+            $versions = array();
+            if (isset($f['versions']) && is_array($f['versions'])) {
+                foreach ($f['versions'] as $v) {
+                    $cv = self::clean_rule($v, true);
+                    if ($cv) {
+                        $versions[] = $cv;
+                    }
+                }
+            }
+            $out[] = array(
+                'id' => $id,
+                'name' => $name,
+                'format' => (isset($f['format']) && is_scalar($f['format'])) ? sanitize_text_field((string) $f['format']) : '',
+                'cards' => $cards,
+                'versions' => $versions,
+            );
+        }
+        return $out;
     }
 
     /** Keeps only the fields of an archetype rule (MTGOFormatData schema plus Format and Disabled), as plain text */
@@ -227,9 +288,12 @@ final class MTGStats_Plugin
                 }
             }
         }
+        // Older admin pages do not send the focus definitions: keep the saved ones
+        $focus = isset($p['focus']) && is_array($p['focus']) ? self::clean_focus($p['focus']) : self::settings()['focus'];
         $settings = array(
             'aliases' => $aliases,
             'customRules' => $rules,
+            'focus' => $focus,
             'conflict' => (isset($p['conflict']) && $p['conflict'] === 'none') ? 'none' : 'simpler',
             'prior' => isset($p['prior']) ? max(0, min(100, (int) $p['prior'])) : 10,
             'accent' => isset($p['accent']) ? (string) sanitize_hex_color((string) $p['accent']) : '',
@@ -384,7 +448,7 @@ final class MTGStats_Plugin
     }
 
     /**
-     * [mtgstats format="Modern" days="30" tournaments="id1,id2" tabs="meta,mu,pos,trend,conv,cards,players,data" theme="auto|light|dark" accent="#2a78d6" prior="10" lang="en|it"]
+     * [mtgstats format="Modern" days="30" tournaments="id1,id2" tabs="focus,meta,mu,pos,trend,conv,cards,players,data" focus="omnath" theme="auto|light|dark" accent="#2a78d6" prior="10" lang="en|it"]
      */
     public static function shortcode($atts)
     {
@@ -394,22 +458,34 @@ final class MTGStats_Plugin
             'days' => '30',
             'tournaments' => '',
             'tabs' => '',
+            'focus' => '',
             'theme' => 'auto',
             'accent' => (string) $set['accent'],
             'prior' => (string) $set['prior'],
             'lang' => '',
         ), $atts, 'mtgstats');
         $lang = in_array($a['lang'], array('en', 'it'), true) ? $a['lang'] : self::language(determine_locale());
+        // The focus definition travels with the page: visitors cannot read the settings
+        $focus = '';
+        if ($a['focus'] !== '') {
+            foreach ((array) $set['focus'] as $f) {
+                if (is_array($f) && isset($f['id']) && $f['id'] === sanitize_key($a['focus'])) {
+                    $focus = (string) wp_json_encode($f, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    break;
+                }
+            }
+        }
         wp_enqueue_style('mtgstats-viewer');
         wp_enqueue_script('mtgstats-viewer');
         $s = self::storage();
         return sprintf(
-            '<div class="mtgstats-app" data-src="%s" data-format="%s" data-days="%s" data-tournaments="%s" data-tabs="%s" data-theme="%s" data-accent="%s" data-prior="%s" data-lang="%s"><noscript>%s</noscript></div>',
+            '<div class="mtgstats-app" data-src="%s" data-format="%s" data-days="%s" data-tournaments="%s" data-tabs="%s" data-focus="%s" data-theme="%s" data-accent="%s" data-prior="%s" data-lang="%s"><noscript>%s</noscript></div>',
             esc_attr($s['url']),
             esc_attr($a['format']),
             esc_attr($a['days']),
             esc_attr($a['tournaments']),
             esc_attr($a['tabs']),
+            esc_attr($focus),
             esc_attr(in_array($a['theme'], array('light', 'dark', 'auto'), true) ? $a['theme'] : 'auto'),
             esc_attr((string) sanitize_hex_color($a['accent'])),
             esc_attr((string) max(0, (int) $a['prior'])),

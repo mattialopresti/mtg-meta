@@ -24,6 +24,10 @@ splits the work three ways:
 
 The server never parses decklists or runs statistics, and visitors never touch third-party services.
 
+An optional fourth place runs imports on a schedule: the headless importer [`tools/sync.js`](../tools/sync.js), for
+example in a GitHub Actions job. It runs the same `core.js` in Node and talks to the same REST API as the admin panel,
+so the server's role does not change.
+
 ## Components
 
 ```
@@ -36,8 +40,12 @@ mtgstats/
     ├── melee.js          Direct melee.gg importer (pages + DataTables endpoints)
     ├── advanced.js       Positioning, trends, variants, card impact, player rating model
     ├── viewer.js/.css    Public dashboard (SVG charts, tabs, tables, archetype profile, theme adaptation)
-    ├── admin.js/.css     Admin panel (import, review, house rules and archetype catalog, preview)
+    ├── admin.js/.css     Admin panel (import, review, house rules and archetype catalog, deck focus, preview)
     └── rules-extra.json  Supplementary archetype rules for archetypes missing from MTGOFormatData
+tools/
+└── sync.js               Headless importer (Node 18+), run by .github/workflows/sync.yml
+tests/
+└── *.test.js             Node tests of the pure functions (node --test)
 ```
 
 The JavaScript files are UMD modules: in the browser they attach `MTGStatsI18n`, `MTGStatsCore`, `MTGStatsMelee`
@@ -66,6 +74,25 @@ admin.js
   ├─ core.classifyTournament()        → archetype, colors and method per player
   └─ POST /mtgstats/v1/tournaments    → t/<id>.json + index.json entry
 ```
+
+### Scheduled import
+
+`tools/sync.js` repeats the cache import above without a browser:
+
+```
+tools/sync.js (Node, e.g. GitHub Actions)
+  ├─ GET  /mtgstats/v1/status                → dataUrl, assetsUrl, plugin version
+  ├─ GET  /mtgstats/v1/settings              → aliases, house rules, conflict mode
+  ├─ GET  <dataUrl>/index.json               → events already imported (same IDs as the admin panel)
+  ├─ core.listCacheMonth()                   → new events of the chosen formats in the last N days
+  ├─ core.compactFromCache(), getBundle(), core.enrichColorsFromScryfall(), core.classifyTournament()
+  └─ POST /mtgstats/v1/tournaments           → as from the admin panel
+```
+
+It authenticates with a WordPress **Application Password** (HTTP Basic), which WordPress accepts on the REST API
+without a nonce. It imports the oldest new events first, at most `MTGSTATS_MAX` per run, and skips MTGO Leagues unless
+`MTGSTATS_LEAGUES=1`. With the `GITHUB_TOKEN` of the Actions job, the GitHub API allows 1,000 requests per hour
+instead of 60. Settings are read once per run, so house rules changed in the admin panel apply from the next run.
 
 ### Direct Melee import
 
@@ -117,7 +144,13 @@ buttons, lists and tables.
 
 **URL state.** The first dashboard on a page mirrors its view in the URL fragment, for example
 `#tab=mu&format=Modern&days=30&arch=Broodscale`. The supported keys are `tab`, `format`, `days`, `ev`
-(event IDs), `top` (top cut excluded), `arch` (open profile) and `card` (archetype on the Cards tab). The
+(event IDs), `top` (top cut excluded), `arch` (open profile), `card` (archetype on the Cards tab) and `ver` (version
+on the focus tab).
+
+**Deck focus.** With `focus="<id>"`, the shortcode writes that focus definition into `data-focus` as JSON, because
+visitors cannot read the settings. The dashboard then adds a focus tab, first in line. It relabels the deck's lists
+with `Adv.focusTournaments()` and reuses the existing statistics on the relabeled copy; the cached tournament files
+are not modified. The
 fragment is written with `history.replaceState`, so the back button is not flooded, and it is read again on
 `hashchange`. Per-visitor preferences, such as the matrix size or the trend metric, are kept in `localStorage`.
 
@@ -221,6 +254,7 @@ nonce, sent in the `X-WP-Nonce` header. Public data is served as static files, n
 | `DELETE` | `/tournaments/<id>` | — | Deletes the file and the index entry |
 | `POST` | `/rules/<format>` | rule bundle JSON | Caches the rule bundle |
 | `POST` | `/melee` | `{ "method": "GET"\|"POST", "path": "…", "body": "…" }` | Proxies one request to melee.gg; returns `{ status, body }` |
+| `GET` | `/status` | — | `{ version, dataUrl, assetsUrl }`, for the headless importer |
 
 ## Settings
 
@@ -230,11 +264,17 @@ Stored in the `mtgstats_settings` option (not autoloaded):
 {
   "aliases": { "Simic Birthing Ritual": "Simic Ritual" },
   "customRules": [ { "Name": "…", "Format": "Modern", "IncludeColorInName": false, "Conditions": [ … ], "Disabled": false } ],
+  "focus": [ { "id": "omnath", "name": "Omnath", "format": "Modern", "cards": ["Omnath, Locus of Creation"],
+               "versions": [ { "Name": "Ritual", "Conditions": [ … ] } ] } ],
   "conflict": "simpler",
   "prior": 10,
   "accent": "#2a78d6"
 }
 ```
+
+`focus` holds the deck focus definitions. The server keeps their id (`sanitize_key`), name, format, key cards and
+version rules (the same fields as a rule variant), and drops duplicate ids. A save without a `focus` field keeps the
+stored definitions.
 
 `customRules` holds the house rules. The server keeps only the rule fields (`Name`, `Format`, `IncludeColorInName`,
 `Conditions`, `Variants`, `Disabled`) as plain text, and drops rules without a name; incomplete rules are kept so the
@@ -249,7 +289,8 @@ dashboard. `prior` and `accent` (empty = use the theme's color) are the defaults
 ## Security model
 
 - **Writes are admin-only.** Every REST route checks `current_user_can('manage_options')`, and WordPress checks the
-  nonce.
+  nonce. The headless importer authenticates with an Application Password instead: keep it in the scheduler's
+  secret store, and revoke it from the user profile if it leaks.
 - **Path safety.** Tournament IDs must match `^[a-z0-9][a-z0-9-]{2,139}$`, and rule bundle names are reduced to
   `[A-Za-z0-9_-]`. This rules out path traversal from either.
 - **Stored fields are sanitized.** `name`, `format` and `source` go through `sanitize_text_field`. `uri` goes through
@@ -271,5 +312,8 @@ dashboard. `prior` and `accent` (empty = use the theme's color) are the defaults
 | `raw.githubusercontent.com` | admin browser | each import | Tournament files, archetype rules, card colors |
 | `api.scryfall.com` | admin browser | import, only for cards with unknown colors | `/cards/collection`, 75 cards per request, 120 ms apart |
 | `melee.gg` | WordPress server | direct import only | Tournament pages, pairings, standings, decklists |
+
+The headless importer calls GitHub and Scryfall in the same way, from the machine that runs it, and the site's REST
+API with its Application Password.
 
 See [THIRD-PARTY.md](../THIRD-PARTY.md) for the terms of these sources.

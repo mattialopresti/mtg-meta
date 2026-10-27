@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Deck focus
+- New **Deck focus** tab in the admin panel. A focus gathers the lists that play a deck's key cards across the
+  archetypes the rules give them, and splits them into versions defined with the house-rule editor (ordered, first
+  match wins). It ships with an Omnath (Modern) preset: Ritual, Paradox / W6 and Elementals. **Test on saved
+  tournaments** shows the lists each version takes.
+- `[mtgstats focus="<id>"]` adds the focus tab to the dashboard, first in line. It shows:
+  - which version to play against the chosen field, with the probability of being the best choice;
+  - the best version against each of the most played archetypes;
+  - per version: average list, the cards gaining ground in the last 21 days (new ones marked), variants, card impact
+    and best results;
+  - each version's share over time;
+  - groups among the lists that match no version.
+- MTGO League events (5-0 lists only) feed the focus lists but not its win rates, shares and matchups.
+
+### Scheduled import
+- `tools/sync.js`: headless importer (Node 18+, no dependencies) that reuses `core.js`, the site's house rules and
+  aliases, and saves events through the REST API with a WordPress Application Password.
+- `.github/workflows/sync.yml` runs it every night. Formats, sources, look-back window, events per run and leagues are
+  configurable; it supports a dry run, and it is skipped when the site address is not configured.
+- New REST route `GET /mtgstats/v1/status` (admin only): plugin version, data and assets URLs.
+
+### Other
+- `Core.ruleSelector()`: ordered rules, first match wins, reused by the focus versions.
+- `Adv.expectedVsField()` can return the raw simulations (`keepSims`).
+- Node tests for the new functions: `node --test`.
+
 ## [1.10.2026.1] - 2026-10-26
 
 ### Archetype detection

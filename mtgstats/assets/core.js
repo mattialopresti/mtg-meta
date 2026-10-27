@@ -375,6 +375,27 @@
     return this.applyAlias(result);
   };
 
+  /**
+   * Regole in ordine di priorita (es. le versioni di un focus): la prima che il mazzo soddisfa vince.
+   * Le regole non valide vengono saltate. Ritorna { match(mainKeys, sideKeys) → Name | null, invalid: [...] },
+   * con mainKeys/sideKeys = Set di cardKey().
+   */
+  function ruleSelector(rules) {
+    var compiled = [], invalid = [];
+    (rules || []).forEach(function (r) {
+      var res = normalizeRule(r);
+      if (res.errors.length) invalid.push({ rule: r, errors: res.errors });
+      else compiled.push({ Name: res.rule.Name, _c: compileConditions(res.rule.Conditions) });
+    });
+    return {
+      invalid: invalid,
+      match: function (mainKeys, sideKeys) {
+        for (var i = 0; i < compiled.length; i++) if (testConditions(compiled[i]._c, mainKeys, sideKeys)) return compiled[i].Name;
+        return null;
+      }
+    };
+  }
+
   ArchetypeParser.prototype.applyAlias = function (result) {
     var al = this.opts.aliases || {};
     if (al[result.archetype]) { result.original = result.archetype; result.archetype = al[result.archetype]; }
@@ -1002,6 +1023,7 @@
     archetypeDisplayName: archetypeDisplayName,
     CONDITION_TYPES: CONDITION_TYPES,
     normalizeRule: normalizeRule,
+    ruleSelector: ruleSelector,
     cardKey: cardKey,
     pickFormatFolder: pickFormatFolder,
     loadFormatBundle: loadFormatBundle,

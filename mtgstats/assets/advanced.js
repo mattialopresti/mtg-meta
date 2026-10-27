@@ -122,8 +122,9 @@
         }
         sims[k] = e;
       }
+      var raw = opts.keepSims ? Float64Array.from(sims) : null;
       sims.sort();
-      return { archetype: a, expected: mean, lo: quantile(sims, 0.05), hi: quantile(sims, 0.95), share: share[i], covered: covered };
+      return { archetype: a, expected: mean, lo: quantile(sims, 0.05), hi: quantile(sims, 0.95), share: share[i], covered: covered, sims: raw };
     });
   }
 
@@ -502,6 +503,122 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Focus: un mazzo (le liste con una carta chiave) diviso in versioni
+  // ---------------------------------------------------------------------------
+
+  /** Evento con sole liste a punteggio pieno (leghe MTGO 5-0): buono per le liste, non per winrate e presenza */
+  function isListOnly(t) {
+    if ((t.rounds || []).some(function (r) { return r.m && r.m.length; })) return false;
+    var withRecord = t.players.filter(function (p) { return p.w !== undefined; });
+    return withRecord.length > 0 && withRecord.every(function (p) { return !p.l; });
+  }
+
+  function focusLabel(focus, version) {
+    return focus.name + ' · ' + version;
+  }
+
+  /**
+   * Rietichetta i mazzi del focus come "Nome · Versione": tutte le statistiche esistenti funzionano
+   * cosi per versione, senza modifiche. Un mazzo e del focus se ha in main almeno una delle carte chiave;
+   * la versione e la prima regola soddisfatta, altrimenti `otherName`.
+   * focus: { name, cards: [...], versions: [{ Name, Conditions }] }
+   * Ritorna { tournaments (copie), labels (versioni nell'ordine delle regole, poi le altre), otherLabel,
+   *           listOnly: [bool per torneo], decks: { etichetta: liste }, invalid }
+   */
+  function focusTournaments(tournaments, focus, opts) {
+    opts = Object.assign({ otherName: 'Other' }, opts || {});
+    var keys = new Set((focus.cards || []).map(Core.cardKey));
+    var selector = Core.ruleSelector(focus.versions || []);
+    var otherLabel = focusLabel(focus, opts.otherName);
+    var decks = {};
+    var out = tournaments.map(function (t) {
+      var ck = t.cards.map(Core.cardKey);
+      var players = t.players.map(function (p) {
+        if (!p.mb || !p.mb.length) return p;
+        var main = new Set(p.mb.map(function (e) { return ck[e[0]]; }));
+        var inFocus = false;
+        keys.forEach(function (k) { if (main.has(k)) inFocus = true; });
+        if (!inFocus) return p;
+        var side = new Set((p.sb || []).map(function (e) { return ck[e[0]]; }));
+        var v = selector.match(main, side);
+        var label = v ? focusLabel(focus, v) : otherLabel;
+        decks[label] = (decks[label] || 0) + 1;
+        return Object.assign({}, p, { a: label, orig: p.a });
+      });
+      return Object.assign({}, t, { players: players });
+    });
+    var seen = new Set();
+    var labels = (focus.versions || []).map(function (v) { return focusLabel(focus, String((v && v.Name) || '').trim()); })
+      .filter(function (l) { if (!decks[l] || seen.has(l)) return false; seen.add(l); return true; });
+    if (decks[otherLabel]) labels.push(otherLabel);
+    return {
+      tournaments: out, labels: labels, otherLabel: otherLabel, decks: decks, invalid: selector.invalid,
+      listOnly: tournaments.map(isListOnly)
+    };
+  }
+
+  /**
+   * Classifica delle opzioni (es. le versioni di un focus) contro un meta: winrate atteso come in
+   * expectedVsField, piu la probabilita che ciascuna sia la scelta migliore, dalle stesse simulazioni.
+   * candidates: indici in archs da mettere a confronto.
+   */
+  function rankOptions(archs, post, overall, field, candidates, opts) {
+    var exp = expectedVsField(archs, post, overall, field, Object.assign({}, opts, { keepSims: true }));
+    var draws = exp[0] ? exp[0].sims.length : 0, wins = new Float64Array(archs.length);
+    for (var k = 0; k < draws; k++) {
+      var best = -1, bv = -Infinity;
+      candidates.forEach(function (i) { if (exp[i].sims[k] > bv) { bv = exp[i].sims[k]; best = i; } });
+      if (best >= 0) wins[best]++;
+    }
+    return candidates.map(function (i) {
+      var e = exp[i];
+      return { archetype: e.archetype, index: i, expected: e.expected, lo: e.lo, hi: e.hi, share: e.share, covered: e.covered, pBest: draws ? wins[i] / draws : 0 };
+    }).sort(function (a, b) { return b.expected - a.expected; });
+  }
+
+  /**
+   * Adozione delle carte: presenza nelle liste delle ultime `recentDays` (contando dall'evento piu recente)
+   * contro quelle precedenti. Serve a vedere quali carte nuove stanno entrando nel mazzo.
+   */
+  function cardAdoption(tournaments, rows, archetype, opts) {
+    opts = Object.assign({ recentDays: 21, minDecks: 3 }, opts || {});
+    var decks = archetypeDecks(tournaments, rows, archetype);
+    if (!decks.length) return null;
+    var lastDate = decks.reduce(function (m, d) { return d.row.date > m ? d.row.date : m; }, '');
+    var cut = new Date(Date.parse(lastDate + 'T00:00:00Z') - (opts.recentDays - 1) * 86400000).toISOString().slice(0, 10);
+    var recent = decks.filter(function (d) { return d.row.date >= cut; });
+    var before = decks.filter(function (d) { return d.row.date < cut; });
+    var res = { cut: cut, recent: recent.length, before: before.length, cards: [] };
+    if (recent.length < opts.minDecks || before.length < opts.minDecks) return res;
+    var stats = new Map();
+    var add = function (list, key) {
+      list.forEach(function (d) {
+        [['main', 'Main'], ['side', 'Side']].forEach(function (sec) {
+          d[sec[0]].forEach(function (q, card) {
+            var id = sec[1] + '|' + card;
+            var s = stats.get(id) || { card: card, section: sec[1], recent: 0, before: 0, copiesRecent: 0, first: d.row.date };
+            s[key]++;
+            if (key === 'recent') s.copiesRecent += q;
+            if (d.row.date < s.first) s.first = d.row.date;
+            stats.set(id, s);
+          });
+        });
+      });
+    };
+    add(before, 'before');
+    add(recent, 'recent');
+    stats.forEach(function (s) {
+      var x = s.recent / recent.length, y = s.before / before.length;
+      res.cards.push({
+        card: s.card, section: s.section, recentShare: x, beforeShare: y, delta: x - y, first: s.first,
+        isNew: s.before === 0, copies: s.recent ? s.copiesRecent / s.recent : 0, decks: s.recent + s.before
+      });
+    });
+    res.cards.sort(function (a, b) { return b.delta - a.delta || a.card.localeCompare(b.card); });
+    return res;
+  }
+
+  // ---------------------------------------------------------------------------
   // Giocatori
   // ---------------------------------------------------------------------------
 
@@ -626,6 +743,10 @@
     consensusDeck: consensusDeck,
     variantClusters: variantClusters,
     cardImpact: cardImpact,
+    isListOnly: isListOnly,
+    focusTournaments: focusTournaments,
+    rankOptions: rankOptions,
+    cardAdoption: cardAdoption,
     playerKey: playerKey,
     playerStats: playerStats,
     ratingModel: ratingModel

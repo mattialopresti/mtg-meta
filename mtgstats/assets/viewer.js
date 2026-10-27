@@ -524,7 +524,7 @@
   // URL state
   // ---------------------------------------------------------------------------
 
-  const URL_KEYS = ['tab', 'format', 'days', 'ev', 'top', 'arch', 'card'];
+  const URL_KEYS = ['tab', 'format', 'days', 'ev', 'top', 'arch', 'card', 'ver'];
   const readHash = () => {
     const params = new URLSearchParams(location.hash.replace(/^#/, ''));
     const out = {};
@@ -547,7 +547,17 @@
     { id: 'data', label: 'Data' }
   ];
   const PERIODS = ['7', '30', '90', 'all'];
-  const PREF_KEYS = ['muN', 'muMode', 'convMode', 'posN', 'posField', 'trendBucket', 'trendMetric', 'playerMin'];
+  const PREF_KEYS = ['muN', 'muMode', 'convMode', 'posN', 'posField', 'trendBucket', 'trendMetric', 'playerMin', 'focusN', 'focusField'];
+
+  /** Focus definition from the shortcode (data-focus): { id, name, format, cards, versions }, or null */
+  function readFocus(json) {
+    if (!json) return null;
+    try {
+      const f = JSON.parse(json);
+      if (!f || !f.name || !Array.isArray(f.cards) || !f.cards.length) return null;
+      return { id: String(f.id || ''), name: String(f.name), format: String(f.format || ''), cards: f.cards.map(String), versions: Array.isArray(f.versions) ? f.versions : [] };
+    } catch (e) { return null; }
+  }
   let instances = 0;
 
   class Dashboard {
@@ -568,10 +578,13 @@
         accent: root.dataset.accent || '',
         urlState: root.dataset.urlState !== 'off' && this.index === 0
       };
+      this.focus = readFocus(root.dataset.focus);
+      if (this.focus && this.focus.format && !this.cfg.format) this.cfg.format = this.focus.format;
       this.cache = new Map();
       this.state = {
-        tab: 'meta', format: '', days: this.cfg.days, ev: null, excludePlayoffs: false, arch: '', cardArch: '',
-        muN: 10, muMode: 'obs', convMode: 'auto', posN: 12, posField: 'all', trendBucket: 'auto', trendMetric: 'share', playerMin: 10
+        tab: 'meta', format: '', days: this.cfg.days, ev: null, excludePlayoffs: false, arch: '', cardArch: '', focusVer: '',
+        muN: 10, muMode: 'obs', convMode: 'auto', posN: 12, posField: 'all', trendBucket: 'auto', trendMetric: 'share', playerMin: 10,
+        focusN: 12, focusField: 'all'
       };
       try { Object.assign(this.state, JSON.parse(localStorage.getItem('mtgs-prefs') || '{}')); } catch (e) { /* storage unavailable */ }
       this.selectArchetype = (name) => this.openArchetype(name);
@@ -634,8 +647,9 @@
       if (fromUrl.ev) st.ev = new Set(fromUrl.ev.split(','));
       if (fromUrl.top === '1') st.excludePlayoffs = true;
       if (fromUrl.card) st.cardArch = fromUrl.card;
+      if (fromUrl.ver) st.focusVer = fromUrl.ver;
       const tabs = this.visibleTabs();
-      st.tab = [fromUrl.tab, st.tab].find((x) => tabs.some((tab) => tab.id === x)) || tabs[0].id;
+      st.tab = [fromUrl.tab, this.focus ? 'focus' : st.tab].find((x) => tabs.some((tab) => tab.id === x)) || tabs[0].id;
       this.pendingArch = fromUrl.arch || '';
 
       this.buildShell();
@@ -644,7 +658,9 @@
     }
 
     visibleTabs() {
-      return TABS.filter((tab) => !this.cfg.tabs.length || this.cfg.tabs.includes(tab.id));
+      // The focus tab, when the shortcode names one, comes first and is labeled with the deck's name
+      const all = this.focus ? [{ id: 'focus', label: this.focus.name }, ...TABS] : TABS;
+      return all.filter((tab) => !this.cfg.tabs.length || this.cfg.tabs.includes(tab.id));
     }
 
     savePrefs() {
@@ -664,6 +680,7 @@
       }
       if (st.excludePlayoffs) p.set('top', '1');
       if (st.tab === 'cards' && st.cardArch) p.set('card', st.cardArch);
+      if (st.tab === 'focus' && st.focusVer) p.set('ver', st.focusVer);
       if (st.arch) p.set('arch', st.arch);
       const hash = `#${p.toString()}`;
       if (hash !== location.hash) {
@@ -925,7 +942,7 @@
         return;
       }
       const renderers = {
-        meta: this.renderMeta, mu: this.renderMatchups, pos: this.renderPositioning, trend: this.renderTrend,
+        focus: this.renderFocus, meta: this.renderMeta, mu: this.renderMatchups, pos: this.renderPositioning, trend: this.renderTrend,
         conv: this.renderConversion, cards: this.renderCards, players: this.renderPlayers, data: this.renderData
       };
       const frag = document.createDocumentFragment();
@@ -1607,6 +1624,295 @@
           tip: { title: d.archetype, rows: [[t('Adjusted'), `${fmt.pct(d.adjWr)} (${fmt.pct(d.lo, 0)} – ${fmt.pct(d.hi, 0)})`], [t('Raw'), t('{wr} over {n} matches', { wr: fmt.pct(d.rawWr), n: fmt.int(d.games) })], [t('Pilot skill'), fmt.pct(d.pilotWr)]] }
         })), { aria: t('Win rate adjusted for pilot skill.'), step: 0.05, min: 0.4, max: 0.6, onSelect: this.selectArchetype });
       });
+    }
+
+    // --- Focus: one deck split into versions -----------------------------------
+
+    /**
+     * Decks with the focus's key cards are relabeled "Name · Version", so the existing statistics work per
+     * version. Events with only perfect-score lists (MTGO Leagues) feed the lists, not win rates or shares.
+     */
+    focusData() {
+      return this.memo('focus', () => {
+        const alpha = this.cfg.alpha, ex = this.state.excludePlayoffs;
+        const F = Adv.focusTournaments(this.tournaments, this.focus, { otherName: t('other lists') });
+        const statTs = F.tournaments.filter((_, i) => !F.listOnly[i]);
+        const rows = Core.playerRows(statTs, { excludePlayoffs: ex });
+        const meta = Core.metaStats(rows, { alpha, beta: alpha });
+        const listRows = Core.playerRows(F.tournaments, { excludePlayoffs: ex });
+        const family = new Set(F.labels);
+        const fam = { players: 0, w: 0, l: 0, d: 0 };
+        for (const r of rows) if (family.has(r.archetype)) { fam.players++; fam.w += r.w; fam.l += r.l; fam.d += r.d; }
+        fam.share = rows.length ? fam.players / rows.length : 0;
+        fam.wr = Core.qbeta(0.5, alpha + fam.w, alpha + fam.l);
+        let matches = 0;
+        for (const ev of statTs) for (const r of ev.rounds) if (!r.ex) for (const m of r.m) if (m[1] >= 0) matches++;
+        return {
+          F, statTs, rows, meta, listRows, family, fam, matches,
+          byName: new Map(meta.map((m) => [m.archetype, m])),
+          lists: listRows.filter((r) => family.has(r.archetype) && r.hasList).length,
+          listOnlyEvents: F.listOnly.filter(Boolean).length
+        };
+      });
+    }
+
+    renderFocus(body, after) {
+      const st = this.state, focus = this.focus, alpha = this.cfg.alpha;
+      if (focus.format && st.format !== focus.format) {
+        const available = this.formats.includes(focus.format);
+        body.append(this.emptyState(t('This analysis is for {format}', { format: focus.format }),
+          available ? t('Switch format to see the {name} versions.', { name: focus.name }) : t('There are no {format} events yet.', { format: focus.format }),
+          available ? [t('Switch to {format}', { format: focus.format }), () => { st.format = focus.format; st.ev = null; this.applyPeriod(); }] : null));
+        return;
+      }
+      const D = this.focusData();
+      const { F, rows, byName, family, fam } = D;
+      const prefix = `${focus.name} · `;
+      const short = (label) => (label.startsWith(prefix) ? label.slice(prefix.length) : label);
+      if (!F.labels.length) {
+        body.append(this.emptyState(t('No {name} lists in the selection', { name: focus.name }), t('Widen the period, or check the key cards in the admin panel.'),
+          st.days !== 'all' ? [t('Show the whole period'), () => { st.days = 'all'; this.applyPeriod(); }] : null));
+        return;
+      }
+      const refresh = (patch) => { Object.assign(st, patch); this.renderTab(); };
+
+      // Versions need some results (league lists do not count) to take part in the ranking: with a handful of
+      // matches their interval is so wide that they would win simulations through noise alone
+      const MIN_MATCHES = 20;
+      const playable = F.labels.filter((v) => byName.has(v) && byName.get(v).w + byName.get(v).l >= MIN_MATCHES);
+      const leftOut = F.labels.filter((v) => !playable.includes(v));
+      const field = D.meta.filter((m) => m.archetype !== 'Unknown' && !family.has(m.archetype)).slice(0, st.focusN).map((m) => m.archetype);
+      const fields = [{ id: 'all', label: t('Whole selection'), rows }];
+      const d2 = rows.filter((r) => r.day2 === true);
+      if (d2.length >= 20) fields.push({ id: 'day2', label: 'Day 2', rows: d2 });
+      const t8 = rows.filter((r) => r.rank !== null && r.rank <= 8);
+      if (t8.length >= 8) fields.push({ id: 'top8', label: 'Top 8', rows: t8 });
+      if (D.statTs.length > 1) {
+        let last = 0;
+        D.statTs.forEach((ev, i) => { if (ev.date > D.statTs[last].date) last = i; });
+        fields.push({ id: 'last', label: t('Latest event'), rows: rows.filter((r) => r.t === last) });
+      }
+      const fieldRef = fields.find((f) => f.id === st.focusField) || fields[0];
+
+      const archs = [...playable, ...field];
+      const ready = playable.length > 0 && field.length > 0 && D.matches >= 20;
+      const mp = ready ? this.memo(`focusMu|${st.focusN}`, () => {
+        const mu = Core.matchupStats(D.statTs, archs, { excludePlayoffs: st.excludePlayoffs });
+        return { mu, post: Adv.matchupPosterior(mu, archs.map((a) => byName.get(a).wrMean)) };
+      }) : null;
+      const rank = ready ? this.memo(`focusRank|${st.focusN}|${fieldRef.id}`, () => Adv.rankOptions(archs, mp.post,
+        archs.map((a) => { const m = byName.get(a); return { p: m.wrMean, a: alpha + m.w, b: alpha + m.l }; }),
+        Adv.shares(fieldRef.rows), playable.map((_, i) => i))) : [];
+      const rankOf = new Map(rank.map((r) => [r.archetype, r]));
+      const best = rank[0];
+
+      body.append(this.kpis([
+        { label: t('Share of the field'), value: fmt.pct(fam.share), sub: t('{n} players', { n: fmt.int(fam.players) }) },
+        { label: t('Win rate'), value: fmt.pct(fam.wr), sub: t('Matches: {rec}', { rec: fmt.record(fam) }) },
+        { label: t('Lists'), value: fmt.int(D.lists), sub: t(F.labels.length === 1 ? '{n} version' : '{n} versions', { n: F.labels.length }) },
+        best ? { label: t('Best option'), value: short(best.archetype), small: true, sub: t('best in {p} of simulations', { p: fmt.pct(best.pBest, 0) }) } : null
+      ]));
+
+      // 1. Which version to play
+      const s1 = this.section({
+        title: t('Which version to play'),
+        lead: t('Expected win rate against the chosen field, and how often each version comes out best.'),
+        info: t('For each version: the estimated matchups against the top {n} archetypes, weighted by their share of the reference field (Bayesian estimate, 1,000 simulations). “Best in” is the share of simulations in which the version has the highest expected win rate. Dot = estimate, line = 90% interval, tick = observed win rate. League events with only 5-0 lists ({k} in the selection) count for the lists, not for win rates.', { n: field.length, k: D.listOnlyEvents }),
+        actions: [
+          this.select(t('Reference field'), fields.map((f) => [f.id, f.label]), fieldRef.id, (v) => refresh({ focusField: v })),
+          this.select(t('Archetypes'), [8, 10, 12, 15, 20].map((k) => [k, t('Top {n}', { n: k })]), st.focusN, (v) => refresh({ focusN: parseInt(v, 10) }))
+        ]
+      });
+      if (best) {
+        const m = byName.get(best.archetype);
+        const notes = [];
+        if (rank.length > 1 && best.pBest < 0.6) notes.push(t('The margin is narrow: the versions are close.'));
+        if (m.w + m.l < 30) notes.push(t('Few matches so far: read it as a hint.'));
+        s1.body.append(h('p', { class: 'mtgs-focus-reco' },
+          t('Against this field the best option is {v}: expected win rate {wr} (90%: {lo} – {hi}), best in {p} of the simulations.',
+            { v: short(best.archetype), wr: fmt.pct(best.expected), lo: fmt.pct(best.lo, 0), hi: fmt.pct(best.hi, 0), p: fmt.pct(best.pBest, 0) }),
+          notes.length ? ` ${notes.join(' ')}` : ''));
+      } else {
+        s1.body.append(h('p', { class: 'mtgs-muted' }, t('Not enough matches to compare the versions: widen the period.')));
+      }
+      const chartBox = h('div');
+      s1.body.append(chartBox, this.table([
+        { key: 'name', label: t('Version'), cls: 'is-name' },
+        { key: 'lists', label: t('Lists'), num: true, fmt: fmt.int },
+        { key: 'share', label: t('Share of the field'), num: true, fmt: (v) => fmt.pct(v) },
+        { key: 'matches', label: t('W-L-D'), num: true, fmt: (v, r) => (r.m ? fmt.record(r.m) : '–') },
+        { key: 'wr', label: t('Win rate'), num: true, fmt: (v) => fmt.pct(v) },
+        { key: 'expected', label: t('Expected'), num: true, fmt: (v) => fmt.pct(v) },
+        { key: 'pBest', label: t('Best in'), num: true, fmt: (v) => fmt.pct(v, 0) }
+      ], F.labels.map((v) => {
+        const m = byName.get(v), r = rankOf.get(v);
+        return { name: short(v), lists: F.decks[v] || 0, share: m ? m.share : null, m, matches: m ? m.matches : null, wr: m ? m.wr : null, expected: r ? r.expected : null, pBest: r ? r.pBest : null };
+      }), { sortKey: 'expected', limit: 12 }));
+      if (ready && leftOut.length) {
+        s1.body.append(h('p', { class: 'mtgs-footnote' }, t('Left out of the comparison, with fewer than {n} matches: {list}.', { n: MIN_MATCHES, list: leftOut.map(short).join(', ') })));
+      }
+      body.append(s1.node);
+      if (rank.length) {
+        after(() => intervalChart(chartBox, this.tip, rank.map((r) => {
+          const m = byName.get(r.archetype);
+          return {
+            label: short(r.archetype), value: r.expected, lo: r.lo, hi: r.hi, mark: m.wrMean, text: fmt.pct(r.expected),
+            tip: { title: short(r.archetype), rows: [[t('Expected'), fmt.pct(r.expected)], [t('90% interval'), `${fmt.pct(r.lo)} – ${fmt.pct(r.hi)}`], [t('Best in'), fmt.pct(r.pBest, 0)], [t('Observed'), `${fmt.pct(m.wrObs)} (${fmt.record(m)})`]] }
+          };
+        }), { aria: t('Which version to play'), step: 0.05, min: 0.4, max: 0.6 }));
+      }
+
+      // 2. Best version against each opponent
+      if (ready) {
+        const s2 = this.section({
+          title: t('Best version by matchup'),
+          lead: t('Estimated win rate of each version against the most played archetypes.'),
+          info: t('Bayesian estimate of each matchup, as in the Matchups tab: cells with few matches start from the overall strength of the two decks. The outlined cell is the best version against that opponent. Below the value, the matches played.'),
+          wide: true
+        });
+        const { mu, post } = mp;
+        const head = (label, title) => h('th', { scope: 'col', class: 'mtgs-matrix-col' }, h('span', { class: 'mtgs-matrix-head', title }, h('span', {}, label)));
+        const table = h('table', { class: 'mtgs-matrix mtgs-focus-matrix' },
+          h('thead', {}, h('tr', {}, h('th', { class: 'mtgs-matrix-corner', scope: 'col' }, h('span', { class: 'mtgs-sr' }, t('Opponent'))),
+            playable.map((v) => head(short(v), v)))),
+          h('tbody', {}, field.map((o, j) => {
+            const oj = playable.length + j;
+            const means = playable.map((_, vi) => post[vi][oj].mean);
+            const top = Math.max(...means);
+            return h('tr', {},
+              h('th', { scope: 'row', class: 'mtgs-matrix-row' },
+                h('button', { type: 'button', class: 'mtgs-matrix-head', title: o, onClick: () => this.openArchetype(o) }, h('span', {}, o)),
+                h('span', { class: 'mtgs-focus-share' }, fmt.pct(byName.get(o).share, 0))),
+              playable.map((v, vi) => {
+                const pc = post[vi][oj], cell = mu.matrix[vi][oj], n = cell.w + cell.l + cell.d;
+                const col = divergingColor(pc.mean, this.dark);
+                const isBest = playable.length > 1 && pc.mean === top;
+                const td = h('td', {
+                  class: `mtgs-cell${col.strong ? ' is-strong' : ''}${cell.w + cell.l < 5 ? ' is-low' : ''}${isBest ? ' is-best' : ''}`, style: { background: col.bg }, tabindex: 0,
+                  'aria-label': t('{a} vs {b}: {wr}, {n} matches', { a: short(v), b: o, wr: fmt.pct(pc.mean, 0), n })
+                }, h('span', { class: 'mtgs-cell-wr' }, fmt.pct(pc.mean, 0)), h('span', { class: 'mtgs-cell-n' }, fmt.int(n)));
+                this.tip.bind(td, () => ({
+                  title: t('{a} vs {b}', { a: short(v), b: o }),
+                  rows: [
+                    [t('Matches'), `${fmt.record(cell)}${cell.w + cell.l ? ` (${fmt.pct(cell.w / (cell.w + cell.l))})` : ''}`],
+                    [t('Estimate'), t('{v} (90%: {lo} – {hi})', { v: fmt.pct(pc.mean), lo: fmt.pct(pc.lo, 0), hi: fmt.pct(pc.hi, 0) })],
+                    [t('Chance of being favored'), fmt.pct(pc.pFav, 0)]
+                  ]
+                }));
+                return td;
+              }));
+          })));
+        s2.body.append(h('div', { class: 'mtgs-matrix-scroll' }, table),
+          h('div', { class: 'mtgs-legend is-center' },
+            h('span', { class: 'mtgs-legend-item' }, h('span', { class: 'mtgs-scale' }), t('unfavorable · 50% · favorable')),
+            h('span', { class: 'mtgs-legend-item' }, h('span', { class: 'mtgs-best-key' }), t('best version'))));
+        body.append(s2.node);
+      }
+
+      // 3. One version in detail
+      const withLists = F.labels.filter((v) => D.listRows.some((r) => r.archetype === v && r.hasList));
+      if (!withLists.includes(st.focusVer)) st.focusVer = (best && withLists.includes(best.archetype)) ? best.archetype : withLists[0] || '';
+      const ver = st.focusVer;
+      if (ver) {
+        body.append(h('div', { class: 'mtgs-toolbar mtgs-focus-toolbar' },
+          h('strong', {}, t('Version')),
+          this.select(t('Version'), withLists.map((v) => [v, t('{a} · {n} lists', { a: short(v), n: F.decks[v] || 0 })]), ver, (v) => refresh({ focusVer: v }))));
+        const cons = Adv.consensusDeck(F.tournaments, D.listRows, ver);
+        if (cons) body.append(this.consensusSection(cons));
+
+        const ad = this.memo(`focusAdopt|${ver}`, () => Adv.cardAdoption(F.tournaments, D.listRows, ver, { recentDays: 21 }));
+        const as = this.section({
+          title: t('What is changing'),
+          lead: ad && ad.cards.length ? t('Lists from the last 21 days ({a}) against the earlier ones ({b}).', { a: fmt.int(ad.recent), b: fmt.int(ad.before) }) : t('At least 3 recent and 3 earlier lists are needed.'),
+          info: t('Share of lists playing each card in the last 21 days of the selection, against the lists before them. “New” marks cards that no earlier list played: new tech entering the deck.')
+        });
+        if (ad && ad.cards.length) {
+          const moves = ad.cards.filter((c) => Math.abs(c.delta) >= 0.1);
+          as.body.append(moves.length ? this.table([
+            { key: 'name', label: t('Card'), cls: 'is-name' },
+            { key: 'beforeShare', label: t('Before'), num: true, fmt: (v) => fmt.pct(v, 0) },
+            { key: 'recentShare', label: t('Last 21 days'), num: true, fmt: (v) => fmt.pct(v, 0), bar: true },
+            { key: 'delta', label: t('Change'), num: true, fmt: (v) => fmt.pp(v, 0) }
+          ], moves.map((c) => ({ ...c, name: `${c.card}${c.section === 'Side' ? ' (SB)' : ''}${c.isNew ? ` · ${t('new')}` : ''}` })), { sortKey: 'delta', limit: 12 })
+            : h('p', { class: 'mtgs-muted' }, t('No card changed by 10 points or more.')));
+        }
+        const variants = this.memo(`focusVar|${ver}`, () => Adv.variantClusters(F.tournaments, D.listRows, ver, { alpha }));
+        const vs = this.section({
+          title: t('Variants'),
+          lead: !variants ? t('At least 12 lists are needed.') : variants.k > 1 ? t('{n} groups of similar lists.', { n: variants.k }) : t('No clear variants: the lists are alike.'),
+          info: t('Lists are grouped by similarity (weighted Jaccard distance on card counts, sideboard at half weight, k-medoids). For each variant: the cards whose average count differs most from the other lists, and the estimated win rate with a 90% interval.')
+        });
+        if (variants && variants.k > 1) vs.body.append(this.variantCards(variants));
+        body.append(h('div', { class: 'mtgs-grid2' }, as.node, vs.node));
+
+        const imp = this.memo(`focusImp|${ver}`, () => Adv.cardImpact(D.statTs, rows, ver, { alpha }));
+        const is = this.section({
+          title: t('Card impact'),
+          lead: t('Win rate with the card minus win rate without it.'),
+          info: t('Difference in win rate between the lists that play the card and those that do not, in percentage points, with a 95% interval. Solid dot = credible difference. This is a correlation, not a causal effect: a card often just marks a variant, and with many cards some differences look credible by chance.')
+        });
+        const mine = D.listRows.filter((r) => r.archetype === ver);
+        const top = [...mine].sort((a, b) => (b.w - b.l) - (a.w - a.l) || (a.rank ?? 1e9) - (b.rank ?? 1e9)).slice(0, 6);
+        const rs = this.section({ title: t('Best results') });
+        rs.body.append(top.length ? h('ul', { class: 'mtgs-results' }, top.map((r) => h('li', {},
+          h('span', { class: 'mtgs-results-name' }, r.player),
+          h('span', { class: 'mtgs-muted' }, `${fmt.record(r)}${r.rank ? ` · ${fmt.ordinal(r.rank)}` : ''}`),
+          h('span', { class: 'mtgs-results-event' }, `${F.tournaments[r.t].name} · ${fmt.date(r.date)}`)))) : h('p', { class: 'mtgs-muted' }, t('No results.')));
+        body.append(h('div', { class: 'mtgs-grid2' }, is.node, rs.node));
+        after(() => {
+          if (!imp.length) { is.body.append(h('p', { class: 'mtgs-muted' }, t('At least 5 lists with and 5 without the card are needed.'))); return; }
+          intervalChart(is.body, this.tip, imp.slice(0, 15).sort((a, b) => b.diff - a.diff).map((x) => ({
+            label: x.card + (x.section === 'Side' ? ' (SB)' : ''), value: x.diff, lo: x.lo, hi: x.hi, muted: !x.credible, text: fmt.pp(x.diff),
+            tip: { title: `${x.card} (${x.section})`, rows: [[t('With the card'), t('{wr} · {n} lists', { wr: fmt.pct(x.wrWith), n: x.decks })], [t('Without'), t('{wr} · {n} lists', { wr: fmt.pct(x.wrWithout), n: x.without })], [t('Difference'), `${fmt.pp(x.diff)} (95%: ${fmt.pp(x.lo)} / ${fmt.pp(x.hi)})`]] }
+          })), { center: 0, step: 0.05, fmt: (v) => fmt.pp(v, 0), aria: t('Card impact'), valueWidth: 78 });
+        });
+      }
+
+      // 4. Versions over time, as a share of the deck's lists
+      const famRows = D.listRows.filter((r) => family.has(r.archetype));
+      const famDates = famRows.map((r) => r.date).sort();
+      const span = famDates.length ? (toDate(famDates[famDates.length - 1]) - toDate(famDates[0])) / 86400000 : 0;
+      const bucket = span > 75 ? 'month' : 'week';
+      const tr = this.memo(`focusTrend|${bucket}`, () => Adv.trendStats(F.tournaments, famRows, { bucket, alpha }));
+      const ts4 = this.section({
+        title: t('Versions over time'),
+        lead: t(bucket === 'month' ? 'Share of the {name} lists, by month.' : 'Share of the {name} lists, by week.', { name: focus.name }),
+        info: t('Each panel is the share of the deck’s lists that belong to that version in each period, MTGO League lists included.'),
+        wide: true
+      });
+      body.append(ts4.node);
+      after(() => {
+        if (tr.buckets.length < 2) { ts4.body.append(h('p', { class: 'mtgs-muted' }, t('More than one period is needed.'))); return; }
+        const labels = tr.buckets.map((b) => (bucket === 'week' ? t('week of {date}', { date: fmt.date(b.start) }) : b.label));
+        smallMultiples(ts4.body, this.tip, F.labels.map((v) => {
+          const ser = tr.series(v);
+          const vals = ser.map((x) => x.share);
+          const delta = vals.length > 1 ? vals[vals.length - 1] - vals[0] : null;
+          return {
+            title: short(v), values: vals, valueText: fmt.pct(vals[vals.length - 1]),
+            sub: delta === null ? '' : `${delta > 0 ? '▲' : delta < 0 ? '▼' : '='} ${fmt.pp(delta)}`,
+            trend: delta > 0.002 ? 'is-up' : delta < -0.002 ? 'is-down' : '',
+            tips: ser.map((x, i) => ({ title: `${short(v)} · ${labels[i]}`, rows: [[t('Share'), `${fmt.pct(x.share)} (${x.n}/${x.total})`]] }))
+          };
+        }), labels, { yMin: 0, yMax: 1, area: true, scaleText: t('scale 0–{max}', { max: fmt.pct(1, 0) }) });
+      });
+
+      // 5. Lists that no version describes: candidates for a new version
+      const others = F.decks[F.otherLabel] || 0;
+      if (others) {
+        const ov = others >= 12 ? this.memo('focusOther', () => Adv.variantClusters(F.tournaments, D.listRows, F.otherLabel, { alpha })) : null;
+        const os = this.section({
+          title: t('Lists outside the versions'),
+          lead: t('{n} {name} lists match none of the defined versions.', { n: fmt.int(others), name: focus.name }),
+          info: t('These lists play the key cards but meet none of the version rules. When they form a clear group, its signature cards are a good starting point for a new version in the admin panel.')
+        });
+        if (ov && ov.k > 1) os.body.append(this.variantCards(ov));
+        else if (ov && ov.clusters.length) {
+          const sig = Adv.consensusDeck(F.tournaments, D.listRows, F.otherLabel);
+          if (sig) os.body.append(this.consensusSection(sig, true));
+        }
+        body.append(os.node);
+      }
     }
 
     // --- Data -----------------------------------------------------------------

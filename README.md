@@ -23,6 +23,8 @@ link to a published matchup matrix in a few minutes.
 - Import any public Melee tournament from its URL. Rounds in a different format, such as the draft rounds at a
   Pro Tour, are excluded automatically.
 - CSV export of standings, matches and decklists.
+- Optional nightly import with a GitHub Actions workflow: [`tools/sync.js`](tools/sync.js) runs the same importer in
+  Node and saves new events through the plugin's REST API with an Application Password.
 
 **Archetype detection**
 - A faithful JavaScript port of [MTGOArchetypeParser](https://github.com/Badaro/MTGOArchetypeParser), using the
@@ -49,6 +51,7 @@ link to a published matchup matrix in a few minutes.
 | Cards | Average decklist (copyable), sub-variants found automatically, per-card win-rate impact, copies distribution |
 | Players | Cross-event leaderboard and a player + deck rating model ("deck or pilot?") |
 | Data | Per-event CSV downloads and every player's result |
+| Deck focus | One deck split into versions: which version to play against the field, with the probability that it is the best choice; best version against each top deck; average list, new cards coming in, variants and card impact per version |
 
 | Matchup matrix | Positioning |
 |---|---|
@@ -99,7 +102,8 @@ Requirements:
 | `format` | most common format | Initial format, e.g. `Modern`, `Pauper` |
 | `days` | `30` | Initial period: `7`, `30`, `90`, any number of days, or `all` |
 | `tournaments` | *(empty)* | Comma-separated tournament IDs; locks the selection to those events |
-| `tabs` | all | Subset of `meta, mu, pos, trend, conv, cards, players, data` |
+| `tabs` | all | Subset of `focus, meta, mu, pos, trend, conv, cards, players, data` |
+| `focus` | *(empty)* | Id of a deck focus defined in the admin panel; adds its tab, first in line |
 | `theme` | `auto` | `auto` follows the page background; `light` or `dark` force a theme |
 | `accent` | theme / settings | Accent color as a hex value, e.g. `#c2412d` |
 | `prior` | settings (`10`) | Strength of the Beta(prior, prior) prior used for win-rate smoothing |
@@ -123,7 +127,8 @@ Requirements:
 The heavy work happens in the administrator's browser: downloading, parsing and detecting archetypes. The server
 only stores the compact result, roughly 7× smaller than the source data. Visitors download static JSON and compute
 the statistics locally. The plugin therefore runs on ordinary shared hosting, with no cron jobs and no scraping
-from the web server.
+from the web server. Scheduled imports run outside WordPress, in a GitHub Actions job (see the
+[user guide](docs/user-guide.md#automatically-every-night)).
 
 ## Documentation
 

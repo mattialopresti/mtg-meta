@@ -205,7 +205,7 @@
   /** Saves the settings, keeping the values that are not passed */
   async function saveSettings(patch) {
     var s = cfg.settings || {};
-    var body = Object.assign({ aliases: s.aliases || {}, customRules: s.customRules || [], conflict: s.conflict || 'simpler', prior: s.prior === undefined ? 10 : s.prior, accent: s.accent || '' }, patch);
+    var body = Object.assign({ aliases: s.aliases || {}, customRules: s.customRules || [], focus: s.focus || [], conflict: s.conflict || 'simpler', prior: s.prior === undefined ? 10 : s.prior, accent: s.accent || '' }, patch);
     cfg.settings = await wp('POST', '/settings', body);
     return cfg.settings;
   }
@@ -232,7 +232,7 @@
   // Layout
   // ---------------------------------------------------------------------------
 
-  var TABS = [['import', 'Import'], ['list', 'Saved tournaments'], ['rules', 'Archetypes and rules'], ['preview', 'Shortcode and preview']];
+  var TABS = [['import', 'Import'], ['list', 'Saved tournaments'], ['rules', 'Archetypes and rules'], ['focus', 'Deck focus'], ['preview', 'Shortcode and preview']];
   var nav = h('nav', { class: 'nav-tab-wrapper mtgsa-tabs' });
   var main = h('div', { class: 'mtgsa-main' });
   root.innerHTML = '';
@@ -245,7 +245,7 @@
       nav.appendChild(h('a', { href: '#', class: 'nav-tab' + (x[0] === tab ? ' nav-tab-active' : ''), text: t(x[1]), onclick: function (e) { e.preventDefault(); go(x[0]); } }));
     });
     main.innerHTML = '';
-    ({ import: renderImport, list: renderList, rules: renderRules, preview: renderPreview, review: renderReview })[tab](main, arg);
+    ({ import: renderImport, list: renderList, rules: renderRules, focus: renderFocusAdmin, preview: renderPreview, review: renderReview })[tab](main, arg);
   }
 
   function panel(title, desc) {
@@ -861,8 +861,10 @@
 
   /**
    * opts: { formats, title, onSave(rule) → error message or '', onCancel(), onTest(rule) }
+   * With opts.compact (versions of a deck focus) there is no format, no color prefix and no test button.
    */
   function ruleEditor(initial, opts) {
+    var compact = !!opts.compact;
     var draft = {
       Name: String(initial.Name || ''),
       Format: String(initial.Format || ''),
@@ -908,12 +910,12 @@
       });
     }
 
-    var nameInp = h('input', { type: 'text', class: 'regular-text', value: draft.Name, placeholder: t('e.g. Boros Dwarves'), oninput: function () { draft.Name = this.value; refresh(); } });
+    var nameInp = h('input', { type: 'text', class: 'regular-text', value: draft.Name, placeholder: compact ? t('e.g. Ritual') : t('e.g. Boros Dwarves'), oninput: function () { draft.Name = this.value; refresh(); } });
     var fmtSel = h('select', { onchange: function () { draft.Format = this.value; } }, [h('option', { value: '', text: t('All formats') })].concat(opts.formats.map(function (f) {
       return h('option', { value: f, selected: sameFormat(f, draft.Format), text: f });
     })));
     var colorChk = h('input', { type: 'checkbox', checked: draft.IncludeColorInName, onchange: function () { draft.IncludeColorInName = this.checked; } });
-    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: t('Save rule') });
+    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: opts.saveLabel || t('Save rule') });
     var testBtn = h('button', { type: 'button', class: 'button', text: t('Test on saved tournaments') });
     var cancelBtn = h('button', { type: 'button', class: 'button-link', text: t('Cancel'), onclick: function () { opts.onCancel(); } });
 
@@ -937,16 +939,18 @@
     drawConditions();
     return h('div', { class: 'mtgsa-editor' }, [
       h('h3', { text: opts.title }),
-      h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Archetype name') + ' ', nameInp]), h('label', {}, [t('Format') + ' ', fmtSel])]),
-      h('div', { class: 'mtgsa-row' }, [h('label', {}, [colorChk, ' ' + t('Put the deck colors before the name (e.g. “Izzet” + name)')])]),
-      h('p', { class: 'description', text: t('A deck gets this archetype when it meets every condition. Type a card name and pick it from the suggestions, or paste a list with one card per line.') }),
+      h('div', { class: 'mtgsa-row' }, [h('label', {}, [(compact ? t('Version name') : t('Archetype name')) + ' ', nameInp]), compact ? null : h('label', {}, [t('Format') + ' ', fmtSel])]),
+      compact ? null : h('div', { class: 'mtgsa-row' }, [h('label', {}, [colorChk, ' ' + t('Put the deck colors before the name (e.g. “Izzet” + name)')])]),
+      h('p', { class: 'description', text: compact
+        ? t('A list gets this version when it meets every condition; versions are tried in order and the first match wins. Type a card name and pick it from the suggestions, or paste a list with one card per line.')
+        : t('A deck gets this archetype when it meets every condition. Type a card name and pick it from the suggestions, or paste a list with one card per line.') }),
       condBox,
       h('p', {}, [h('button', { type: 'button', class: 'button', text: '+ ' + t('Add condition'), onclick: function () {
         draft.Conditions.push({ Type: 'OneOrMoreInMainboard', Cards: [] }); drawConditions();
       } })]),
       draft.Variants && draft.Variants.length ? h('p', { class: 'description', text: t('This rule also has {n} variants: they are kept, and you can change them in the JSON editor.', { n: draft.Variants.length }) }) : null,
       errorsBox,
-      h('div', { class: 'mtgsa-row' }, [saveBtn, testBtn, cancelBtn])
+      h('div', { class: 'mtgsa-row' }, [saveBtn, opts.onTest ? testBtn : null, cancelBtn])
     ]);
   }
 
@@ -1354,6 +1358,277 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Tab: Deck focus
+  // ---------------------------------------------------------------------------
+
+  // Ready-made focus definitions. Versions are tried in order: a list that plays both Birthing Ritual and
+  // Wrenn and Six is a Ritual list.
+  var FOCUS_PRESETS = [{
+    id: 'omnath', name: 'Omnath', format: 'Modern', cards: ['Omnath, Locus of Creation'],
+    versions: [
+      { Name: 'Ritual', Conditions: [{ Type: 'InMainboard', Cards: ['Birthing Ritual'] }] },
+      { Name: 'Paradox / W6', Conditions: [{ Type: 'OneOrMoreInMainboard', Cards: ['Way of the Paradox', 'Wrenn and Six'] }] },
+      { Name: 'Elementals', Conditions: [{ Type: 'InMainboard', Cards: ['Risen Reef'] }] }
+    ]
+  }];
+
+  function focusShortcode(f) { return '[mtgstats focus="' + f.id + '"]'; }
+
+  /** Errors of a focus definition; versions are checked with the same rules as house rules */
+  function focusErrors(f, others) {
+    var errors = [];
+    if (!String(f.name || '').trim()) errors.push(t('The focus has no name.'));
+    if (!f.cards.length) errors.push(t('Add at least one key card.'));
+    if (others.some(function (o) { return o.id === f.id; })) errors.push(t('There is already a focus with this name.'));
+    var names = {};
+    f.versions.forEach(function (v) {
+      Core.normalizeRule(v).errors.forEach(function (e) { errors.push(e); });
+      var k = String(v.Name || '').trim().toLowerCase();
+      if (k && names[k]) errors.push(t('Two versions are called “{name}”.', { name: v.Name }));
+      names[k] = true;
+    });
+    return errors;
+  }
+
+  /** opts: { formats, others, title, onSave(focus) → error message or '', onCancel(), onTest(focus) } */
+  function focusEditor(initial, opts) {
+    var draft = {
+      name: String(initial.name || ''),
+      format: String(initial.format || ''),
+      cards: (initial.cards || []).slice(),
+      versions: (initial.versions || []).map(function (v) { return JSON.parse(JSON.stringify(v)); })
+    };
+    var errorsBox = h('div', { class: 'mtgsa-errors', role: 'alert' });
+    var versionsBox = h('div');
+    var versionEditor = h('div');
+
+    function build() {
+      // The id stays the same when the deck is renamed, so the shortcodes already on pages keep working
+      var f = { id: initial.id || Core.slugify(draft.name), name: draft.name.replace(/\s+/g, ' ').trim(), format: draft.format, cards: draft.cards.slice(), versions: draft.versions.slice() };
+      return { focus: f, errors: focusErrors(f, opts.others) };
+    }
+    function showErrors(list) {
+      errorsBox.innerHTML = '';
+      list.forEach(function (msg) { errorsBox.appendChild(h('p', { text: msg })); });
+    }
+
+    function editVersion(index) {
+      versionEditor.innerHTML = '';
+      versionEditor.appendChild(ruleEditor(index >= 0 ? draft.versions[index] : {}, {
+        compact: true,
+        formats: [],
+        title: index >= 0 ? t('Edit version') : t('New version'),
+        saveLabel: t('Apply'),
+        onCancel: function () { versionEditor.innerHTML = ''; },
+        onSave: function (rule) {
+          var v = { Name: rule.Name, Conditions: rule.Conditions };
+          if (index >= 0) draft.versions[index] = v; else draft.versions.push(v);
+          versionEditor.innerHTML = '';
+          drawVersions();
+          return Promise.resolve('');
+        }
+      }));
+      var first = versionEditor.querySelector('input');
+      if (first) first.focus();
+    }
+
+    function drawVersions() {
+      versionsBox.innerHTML = '';
+      if (!draft.versions.length) {
+        versionsBox.appendChild(h('p', { class: 'description', text: t('No versions yet: every list with the key cards will be counted as one deck.') }));
+        return;
+      }
+      var move = function (i, d) {
+        var j = i + d;
+        if (j < 0 || j >= draft.versions.length) return;
+        var x = draft.versions[i]; draft.versions[i] = draft.versions[j]; draft.versions[j] = x;
+        drawVersions();
+      };
+      versionsBox.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
+        h('thead', {}, [h('tr', {}, [h('th', { text: '#' }), h('th', { text: t('Version') }), h('th', { text: t('Definition') }), h('th', { text: '' })])]),
+        h('tbody', {}, draft.versions.map(function (v, i) {
+          return h('tr', {}, [
+            h('td', { text: String(i + 1) }),
+            h('td', {}, [h('strong', { text: v.Name || '?' })]),
+            h('td', { class: 'mtgsa-info', text: ruleSummary(v) }),
+            h('td', { class: 'mtgsa-actions' }, [
+              h('button', { type: 'button', class: 'button button-small', text: '↑', 'aria-label': t('Move up'), disabled: i === 0, onclick: function () { move(i, -1); } }),
+              h('button', { type: 'button', class: 'button button-small', text: '↓', 'aria-label': t('Move down'), disabled: i === draft.versions.length - 1, onclick: function () { move(i, 1); } }),
+              h('button', { type: 'button', class: 'button button-small', text: t('Edit'), onclick: function () { editVersion(i); } }),
+              h('button', { type: 'button', class: 'button button-small button-link-delete', text: t('Remove'), onclick: function () { draft.versions.splice(i, 1); drawVersions(); } })
+            ])
+          ]);
+        }))
+      ]));
+    }
+
+    var nameInp = h('input', { type: 'text', class: 'regular-text', value: draft.name, placeholder: t('e.g. Omnath'), oninput: function () { draft.name = this.value; } });
+    var fmtSel = h('select', { onchange: function () { draft.format = this.value; } }, [h('option', { value: '', text: t('All formats') })].concat(opts.formats.map(function (f) {
+      return h('option', { value: f, selected: sameFormat(f, draft.format), text: f });
+    })));
+    var saveBtn = h('button', { type: 'button', class: 'button button-primary', text: t('Save focus') });
+    saveBtn.addEventListener('click', async function () {
+      var res = build();
+      showErrors(res.errors);
+      if (res.errors.length) return;
+      saveBtn.disabled = true;
+      var err = await opts.onSave(res.focus);
+      saveBtn.disabled = false;
+      if (err) showErrors([err]);
+    });
+    var testBtn = h('button', { type: 'button', class: 'button', text: t('Test on saved tournaments'), onclick: function () {
+      var res = build();
+      showErrors(res.errors);
+      if (!res.errors.length) opts.onTest(res.focus);
+    } });
+
+    drawVersions();
+    return h('div', { class: 'mtgsa-editor' }, [
+      h('h3', { text: opts.title }),
+      h('div', { class: 'mtgsa-row' }, [h('label', {}, [t('Deck name') + ' ', nameInp]), h('label', {}, [t('Format') + ' ', fmtSel])]),
+      h('p', { class: 'description', text: t('Key cards: a list belongs to the deck when its main deck plays at least one of them.') }),
+      cardPicker(draft.cards, function () {}),
+      h('h4', { text: t('Versions') }),
+      h('p', { class: 'description', text: t('Tried in order: a list gets the first version whose conditions it meets. Lists that meet none are shown as “other lists”, and the dashboard looks for groups among them.') }),
+      versionsBox,
+      h('p', {}, [h('button', { type: 'button', class: 'button', text: '+ ' + t('Add version'), onclick: function () { editVersion(-1); } })]),
+      versionEditor,
+      errorsBox,
+      h('div', { class: 'mtgsa-row' }, [saveBtn, testBtn, h('button', { type: 'button', class: 'button-link', text: t('Cancel'), onclick: function () { opts.onCancel(); } })])
+    ]);
+  }
+
+  /** Splits the decks of the most recent saved tournaments into the focus versions */
+  async function testFocus(focus, box) {
+    box.innerHTML = '';
+    box.appendChild(h('p', { class: 'description', text: t('Testing on saved tournaments…') }));
+    var idx = await loadIndex();
+    var entries = (idx.tournaments || []).filter(function (e) { return !focus.format || sameFormat(e.format, focus.format); })
+      .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); }).slice(0, TEST_MAX_TOURNAMENTS);
+    var tours = [];
+    for (var i = 0; i < entries.length; i++) {
+      try { tours.push(await loadTournament(entries[i])); } catch (e) { /* skip unreadable files */ }
+    }
+    box.innerHTML = '';
+    if (!tours.length) { box.appendChild(h('p', { class: 'description', text: t('No saved tournaments to test on.') })); return; }
+    var F = window.MTGStatsAdvanced.focusTournaments(tours, focus, { otherName: t('other lists') });
+    var total = Object.keys(F.decks).reduce(function (a, k) { return a + F.decks[k]; }, 0);
+    box.appendChild(h('p', {}, [h('strong', { text: t('{n} {name} lists in the last {k} saved tournaments.', { n: total, name: focus.name, k: tours.length }) })]));
+    if (!total) { box.appendChild(h('p', { class: 'description', text: t('No list plays the key cards: check their spelling.') })); return; }
+    var now = {};
+    F.tournaments.forEach(function (tour) {
+      tour.players.forEach(function (p) {
+        if (p.orig === undefined) return;
+        now[p.a] = now[p.a] || {};
+        now[p.a][p.orig || 'Unknown'] = (now[p.a][p.orig || 'Unknown'] || 0) + 1;
+      });
+    });
+    box.appendChild(h('table', { class: 'widefat striped mtgsa-table mtgsa-narrow' }, [
+      h('thead', {}, [h('tr', {}, [t('Version'), t('Lists'), t('Currently classified as')].map(function (x) { return h('th', { text: x }); }))]),
+      h('tbody', {}, F.labels.map(function (label) {
+        var orig = now[label] || {};
+        return h('tr', {}, [
+          h('td', { text: label }),
+          h('td', { text: String(F.decks[label]) }),
+          h('td', { class: 'mtgsa-info', text: Object.keys(orig).sort(function (a, b) { return orig[b] - orig[a]; }).map(function (a) { return a + ' (' + orig[a] + ')'; }).join(', ') })
+        ]);
+      }))
+    ]));
+    var leagues = F.listOnly.filter(Boolean).length;
+    if (leagues) box.appendChild(h('p', { class: 'description', text: t('{n} of these events only publish 5-0 lists (MTGO Leagues): the dashboard uses them for the lists, not for win rates.', { n: leagues }) }));
+  }
+
+  async function renderFocusAdmin(el) {
+    var list = ((cfg.settings || {}).focus || []).slice();
+    var idx = await loadIndex();
+    var formats = Core.KNOWN_FORMATS.slice();
+    (idx.tournaments || []).forEach(function (e) { if (e.format && !formats.some(function (x) { return sameFormat(x, e.format); })) formats.push(String(e.format)); });
+
+    var p1 = panel(t('Deck focus'), t('Follow one deck closely: the lists with its key cards are split into versions, and the dashboard shows which version to play against the current field, how each version does against the most played decks, its average list and the cards that are coming in. Add the focus to a page with its shortcode.'));
+    var status = h('span', { class: 'mtgsa-status' });
+    var editorBox = h('div');
+    var testBox = h('div', { class: 'mtgsa-test' });
+    var listBox = h('div');
+    var actions = h('div', { class: 'mtgsa-row' });
+
+    async function store(next) {
+      status.textContent = t('Saving…');
+      try {
+        await saveSettings({ focus: next });
+        list = (cfg.settings.focus || []).slice();
+        status.textContent = t('Saved ✓');
+        draw();
+        return '';
+      } catch (e) {
+        status.textContent = t('Error: {error}', { error: e.message });
+        return t('Error: {error}', { error: e.message });
+      }
+    }
+
+    function openEditor(focus, index, title) {
+      testBox.innerHTML = '';
+      editorBox.innerHTML = '';
+      editorBox.appendChild(focusEditor(focus, {
+        formats: formats,
+        others: list.filter(function (_, i) { return i !== index; }),
+        title: title,
+        onCancel: function () { editorBox.innerHTML = ''; testBox.innerHTML = ''; },
+        onTest: function (f) { testFocus(f, testBox); },
+        onSave: async function (f) {
+          var next = list.slice();
+          if (index >= 0) next[index] = f; else next.push(f);
+          var err = await store(next);
+          if (!err) { editorBox.innerHTML = ''; testBox.innerHTML = ''; }
+          return err;
+        }
+      }));
+      editorBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function draw() {
+      actions.innerHTML = '';
+      actions.appendChild(h('button', { type: 'button', class: 'button button-primary', text: '+ ' + t('New focus'), onclick: function () { openEditor({}, -1, t('New focus')); } }));
+      FOCUS_PRESETS.forEach(function (p) {
+        if (list.some(function (f) { return f.id === p.id; })) return;
+        actions.appendChild(h('button', { type: 'button', class: 'button', text: t('Add preset: {name} ({format})', { name: p.name, format: p.format }), onclick: function () { openEditor(p, -1, t('New focus')); } }));
+      });
+      actions.appendChild(status);
+
+      listBox.innerHTML = '';
+      if (!list.length) { listBox.appendChild(h('p', { class: 'description', text: t('No deck focus yet. Create one, or start from a preset.') })); return; }
+      listBox.appendChild(h('table', { class: 'widefat striped mtgsa-table' }, [
+        h('thead', {}, [h('tr', {}, [t('Deck'), t('Format'), t('Key cards'), t('Versions'), t('Shortcode'), ''].map(function (x) { return h('th', { text: x }); }))]),
+        h('tbody', {}, list.map(function (f, i) {
+          return h('tr', {}, [
+            h('td', {}, [h('strong', { text: f.name })]),
+            h('td', { text: f.format || t('All formats') }),
+            h('td', { class: 'mtgsa-info', text: (f.cards || []).join(', ') }),
+            h('td', { class: 'mtgsa-info', text: (f.versions || []).map(function (v) { return v.Name; }).join(' → ') || '–' }),
+            h('td', {}, [h('code', { text: focusShortcode(f) })]),
+            h('td', { class: 'mtgsa-actions' }, [
+              h('button', { type: 'button', class: 'button button-small', text: t('Edit'), onclick: function () { openEditor(f, i, t('Edit focus')); } }),
+              h('button', { type: 'button', class: 'button button-small', text: t('Test'), onclick: function () { editorBox.innerHTML = ''; testFocus(f, testBox); } }),
+              h('button', { type: 'button', class: 'button button-small button-link-delete', text: t('Delete'), onclick: function () {
+                if (!window.confirm(t('Delete the focus “{name}”? Pages using its shortcode will show the dashboard without it.', { name: f.name }))) return;
+                var next = list.slice();
+                next.splice(i, 1);
+                store(next);
+              } })
+            ])
+          ]);
+        }))
+      ]));
+    }
+
+    p1.body.appendChild(actions);
+    p1.body.appendChild(editorBox);
+    p1.body.appendChild(testBox);
+    p1.body.appendChild(listBox);
+    el.appendChild(p1);
+    draw();
+  }
+
+  // ---------------------------------------------------------------------------
   // Tab: Shortcode and preview
   // ---------------------------------------------------------------------------
 
@@ -1364,6 +1639,7 @@
       ['[mtgstats format="Pauper" days="60"]', t('Initial format and period.')],
       ['[mtgstats tournaments="ID1,ID2"]', t('Only some tournaments (IDs are in the saved tournaments list and in the file names).')],
       ['[mtgstats tabs="meta,mu"]', t('Only some tabs: meta, mu, pos, trend, conv, cards, players, data.')],
+      ['[mtgstats focus="omnath"]', t('Adds the tab of a deck focus (see “Deck focus”), first in line; with tabs="focus" it is the only one.')],
       ['[mtgstats theme="dark"]', t('Theme: auto (default, follows the page background), light, dark.')],
       ['[mtgstats accent="#c2412d"]', t('Accent color for this page (otherwise the one from the settings or the theme).')],
       ['[mtgstats lang="en"]', t('Language: en or it (default: the site language).')]

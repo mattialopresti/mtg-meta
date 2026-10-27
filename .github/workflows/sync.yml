@@ -1,0 +1,51 @@
+# Imports the new tournaments into a WordPress site running MTG Stats, every night.
+# Setup (repository Settings → Secrets and variables → Actions):
+#   variable MTGSTATS_URL           the site address, e.g. https://example.com
+#   secret   MTGSTATS_USER          a WordPress administrator
+#   secret   MTGSTATS_APP_PASSWORD  an Application Password of that user (Users → Profile → Application Passwords)
+#   optional variables: MTGSTATS_FORMATS (default Modern), MTGSTATS_SOURCES, MTGSTATS_DAYS, MTGSTATS_MAX,
+#                       MTGSTATS_LEAGUES, MTGSTATS_REST
+# Without MTGSTATS_URL (for example in a fork) the job is skipped.
+name: Sync tournaments
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List what would be imported without saving anything
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mtgstats-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ vars.MTGSTATS_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Import new tournaments
+        run: node tools/sync.js
+        env:
+          MTGSTATS_URL: ${{ vars.MTGSTATS_URL }}
+          MTGSTATS_REST: ${{ vars.MTGSTATS_REST }}
+          MTGSTATS_USER: ${{ secrets.MTGSTATS_USER }}
+          MTGSTATS_APP_PASSWORD: ${{ secrets.MTGSTATS_APP_PASSWORD }}
+          MTGSTATS_FORMATS: ${{ vars.MTGSTATS_FORMATS }}
+          MTGSTATS_SOURCES: ${{ vars.MTGSTATS_SOURCES }}
+          MTGSTATS_DAYS: ${{ vars.MTGSTATS_DAYS }}
+          MTGSTATS_MAX: ${{ vars.MTGSTATS_MAX }}
+          MTGSTATS_LEAGUES: ${{ vars.MTGSTATS_LEAGUES }}
+          MTGSTATS_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          GITHUB_TOKEN: ${{ github.token }}

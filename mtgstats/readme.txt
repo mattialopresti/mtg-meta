@@ -17,6 +17,8 @@ MTG Stats turns Melee tournament results into a metagame dashboard on your site.
 * Archetypes are detected from decklists with the community rules of MTGOFormatData (a port of MTGOArchetypeParser).
 * Supplementary rules for recent archetypes, house rules with a visual editor and a test on saved tournaments, aliases and manual overrides.
 * Dashboard tabs: metagame share and smoothed win rates; matchup matrix (observed or Bayesian); expected win rate against a field and equilibrium metagame; trends; Day 2 / Top N conversion; average decklist, variants and card impact; players and a deck-or-pilot model; CSV export.
+* Deck focus: follow one deck split into versions, with the version to play against the current field, the best version against each top deck, and the cards coming into each version.
+* Optional nightly import from a GitHub Actions job, through the plugin's REST API and a WordPress Application Password.
 * Archetype profile in a side panel, shareable links, and a design that follows your theme's font, colors and light/dark mode.
 * Charts are plain SVG, with no external libraries. Visitors only download static JSON from your uploads folder.
 
@@ -30,7 +32,7 @@ Documentation: https://github.com/mattialopresti/mtg-meta
 2. Open MTG Stats in the admin menu and import some tournaments.
 3. Add the [mtgstats] shortcode to a page.
 
-Shortcode attributes: format, days, tournaments, tabs (meta, mu, pos, trend, conv, cards, players, data), theme (auto, light, dark), accent, prior, lang (en, it).
+Shortcode attributes: format, days, tournaments, tabs (focus, meta, mu, pos, trend, conv, cards, players, data), focus (id of a deck focus), theme (auto, light, dark), accent, prior, lang (en, it).
 
 == External services ==
 

@@ -43,6 +43,7 @@ When you add or change a user-facing string, update the Italian translation in t
 3. Follow the code conventions below.
 4. Before opening the pull request:
    - check that `php -l mtgstats/mtgstats.php` reports no errors;
+   - run `node --test` from the repository root, and add tests for new statistics in `tests/`;
    - try the change in a WordPress install, with both a light and a dark theme if it touches the dashboard.
 5. If the change affects a statistic, update [docs/methodology.md](docs/methodology.md).
 6. Add a line under an "Unreleased" heading in [CHANGELOG.md](CHANGELOG.md).

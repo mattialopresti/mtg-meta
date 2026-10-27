@@ -13,6 +13,7 @@ tested in Node.
 - [Trends](#trends)
 - [Conversion](#conversion)
 - [Cards](#cards)
+- [Deck focus](#deck-focus)
 - [Players](#players)
 - [Known caveats](#known-caveats)
 
@@ -260,6 +261,71 @@ A card is **credible** when the interval excludes 0. The 20 cards with the large
 
 This is a correlation, not a causal effect. Cards often mark a variant, or a better pilot. With dozens of cards
 tested, a few will look credible by chance.
+
+## Deck focus
+
+A focus follows one deck across the archetypes the rules give it. Omnath lists, for example, are split by the
+community rules between a similarity group, *Omnath Control* and *Elementals*. A focus brings them back together, then
+splits them into versions defined by the site administrator. The code is `focusTournaments()`, `rankOptions()` and
+`cardAdoption()` in [`advanced.js`](../mtgstats/assets/advanced.js).
+
+### Membership and versions
+
+- A list belongs to the deck when its main deck plays at least one of the **key cards**. Card names are compared as
+  in the archetype rules.
+- **Versions** are rules with the same condition types as house rules. They are tried in order, and the first one
+  the list meets gives its version. Lists that meet none are grouped as *other lists*.
+- Each list of the deck is relabeled `Name · Version`. Every statistic is then computed on the relabeled data, so a
+  version behaves exactly like an archetype. This includes matchups between two versions of the deck.
+
+### Events with only 5-0 lists
+
+MTGO Leagues publish only the lists that went 5-0. An event counts as **list-only** when it has no pairings and
+every player with a record has zero losses. List-only events:
+
+- **feed** the lists: average list, variants, *What is changing*, *Versions over time*;
+- are **left out** of shares, win rates, matchups and the ranking, which they would inflate.
+
+### Which version to play
+
+- **Candidates.** Versions with at least 20 decided matches in the selection. With fewer, the interval is so wide
+  that a version could come out best through noise alone.
+- **Field.** The top N archetypes outside the deck (12 by default), weighted by their share of the reference field:
+  whole selection, Day 2, Top 8 or latest event.
+- **Expected win rate.** Computed as in [Positioning](#expected-win-rate-against-a-field), from the Bayesian matchup
+  estimates.
+- **Probability of being the best.** The same 1,000 seeded simulations give, for each candidate, an expected win
+  rate per draw. The probability is the share of draws in which that candidate has the highest value.
+
+Draws of different versions are independent, even for a matchup the versions share. The probability is therefore a
+reading of how far apart the intervals are, not an exact posterior.
+
+The dashboard adds two notes to its recommendation:
+- the margin is narrow, when the best version wins fewer than 60% of the draws;
+- the evidence is thin, when the best version has fewer than 30 matches.
+
+### Best version by matchup
+
+Each cell is the Bayesian matchup estimate of [Matchups](#matchups) between a version (column) and one of the top
+archetypes (row). The outlined cell is the version with the highest estimate against that opponent.
+
+### What is changing
+
+- **Split.** The cut is 21 days before the most recent list of the version. Lists on or after the cut are *recent*;
+  the others are *earlier*.
+- **Comparison.** For each card, main deck and sideboard separately, the share of recent lists that play it against
+  the share of earlier lists.
+- **Display.** Cards that moved by at least 10 percentage points are listed. Cards that no earlier list played are
+  marked *new*.
+- **Minimum.** At least 3 recent and 3 earlier lists.
+
+### Versions over time and other lists
+
+**Versions over time** shows each version's share of the deck's lists, per week, or per month when the lists span
+more than 75 days. MTGO League lists are included.
+
+**Lists outside the versions.** When there are at least 12 *other lists*, they are clustered as in
+[Variants](#variants). A clear group, with its signature cards, is a candidate for a new version.
 
 ## Players
 
