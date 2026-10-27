@@ -1,10 +1,10 @@
 # Changelog
 
 All notable changes to this project are documented here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). From 1.26.3, versions read
+**major.year.release**: 1.26.3 is the third release of 2026 (after 1.10.26 and 1.10.2026.1).
 
-## Unreleased
+## [1.26.3] - 2026-10-27
 
 ### Deck focus
 - New **Deck focus** tab in the admin panel. A focus gathers the lists that play a deck's key cards across the
@@ -31,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `Core.ruleSelector()`: ordered rules, first match wins, reused by the focus versions.
 - `Adv.expectedVsField()` can return the raw simulations (`keepSims`).
 - Node tests for the new functions: `node --test`.
+- When only one version has enough matches to be compared, the focus says so instead of calling it the best choice
+  in 100% of the simulations.
 
 ## [1.10.2026.1] - 2026-10-26
 
@@ -114,6 +116,7 @@ First public release.
 - English and Italian interface (dashboard, admin panel and server messages), following the site language or the
   `lang` shortcode attribute, with localized number and date formatting.
 
+[1.26.3]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.26.3
 [1.10.2026.1]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.10.2026.1
 [1.10.26]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.10.26
 [1.0.0]: https://github.com/mattialopresti/mtg-meta/releases/tag/v1.0.0

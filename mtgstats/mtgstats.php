@@ -3,7 +3,7 @@
  * Plugin Name:       MTG Stats
  * Plugin URI:        https://github.com/mattialopresti/mtg-meta
  * Description:       Metagame analytics for Magic: The Gathering tournaments. Imports events from Melee (directly or through MTGODecklistCache), detects archetypes automatically and publishes a dashboard with the [mtgstats] shortcode.
- * Version:           1.10.2026.1
+ * Version:           1.26.3
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Mattia Lopresti
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('MTGSTATS_VERSION', '1.10.2026.1');
+define('MTGSTATS_VERSION', '1.26.3');
 define('MTGSTATS_FILE', __FILE__);
 
 final class MTGStats_Plugin

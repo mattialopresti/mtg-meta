@@ -3,7 +3,7 @@ Contributors: mattialopresti
 Tags: magic the gathering, mtg, metagame, tournament, statistics
 Requires at least: 5.8
 Requires PHP: 7.4
-Stable tag: 1.10.2026.1
+Stable tag: 1.26.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -53,6 +53,12 @@ In wp-content/uploads/mtgstats/: index.json, one JSON file per tournament, and a
 Fix it on the tournament's review page, add an alias or a house rule in "Archetypes and rules", then reclassify. Rules that are wrong for everyone should be fixed upstream in MTGOFormatData.
 
 == Changelog ==
+
+= 1.26.3 =
+* Deck focus: follow one deck (e.g. Omnath in Modern) across its versions, with the [mtgstats focus="<id>"] shortcode: which version to play against the field, best version per matchup, average list, cards coming in, variants, versions over time.
+* Optional nightly import with a GitHub Actions workflow (tools/sync.js) through the REST API and an Application Password.
+* New admin-only REST route GET /status.
+* Version numbers now read major.year.release: 1.26.3 is the third release of 2026.
 
 = 1.10.2026.1 =
 * Supplementary rules for archetypes missing from the community rules (e.g. Jund Sacrifice and Boros Dwarves in Standard).

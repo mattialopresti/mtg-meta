@@ -31,7 +31,7 @@ event. To import new events every night without opening the admin, see
 
 ## Installing
 
-1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.10.2026.1.zip`, then click **Install Now** and **Activate**.
+1. Go to **Plugins → Add New → Upload Plugin**, select `mtgstats-1.26.3.zip`, then click **Install Now** and **Activate**.
 2. A new **MTG Stats** entry appears in the admin menu.
 3. Tournament data is stored in `wp-content/uploads/mtgstats/`, so uninstalling the plugin does not delete it.
 
@@ -279,7 +279,7 @@ and its signature cards: a hint that a new version has appeared.
 - **Which version to play.** Each version's expected win rate against the field you choose (whole selection, Day 2,
   Top 8, latest event), with the probability that it is the best choice. The recommendation above the chart warns
   when the versions are close or the matches are few. Versions with fewer than 20 matches are left out of the
-  comparison.
+  comparison; when only one version is left, the tab says so and shows no probability.
 - **Best version by matchup.** For each of the most played archetypes, the estimated win rate of every version. The
   outlined cell is the best version against that deck: useful to pick a version for a known local metagame.
 - **Version details.** Pick a version to see:

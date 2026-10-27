@@ -1010,7 +1010,7 @@
   }
 
   return {
-    version: '1.10.2026.1',
+    version: '1.26.3',
     normCardName: normCardName,
     parseLenientJson: parseLenientJson,
     slugify: slugify,

@@ -79,7 +79,7 @@ link to a published matchup matrix in a few minutes.
 
 ## Installation
 
-1. Download `mtgstats-1.10.2026.1.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
+1. Download `mtgstats-1.26.3.zip` from the [latest release](https://github.com/mattialopresti/mtg-meta/releases/latest).
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**, choose the zip, then click **Install** and **Activate**.
 3. Open **MTG Stats** in the admin menu. On the **Import** tab, pick a month, click **Search tournaments** and import a
    few events.
