@@ -61,10 +61,20 @@ function headersFor(url, extra) {
   return h;
 }
 
+// Scryfall answers 429 when the runner's shared IP has made many requests: wait and try again a few times
+async function fetchRetry(url, init) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch(url, init);
+    if (r.status !== 429 || attempt >= 3 || !/api\.scryfall\.com/.test(url)) return r;
+    const wait = (parseInt(r.headers.get('retry-after'), 10) || 2 ** attempt) * 1000;
+    await new Promise((res) => setTimeout(res, Math.min(wait, 10000)));
+  }
+}
+
 const http = {
-  json: async (url) => (await check(await fetch(url, { headers: headersFor(url) }), url)).json(),
-  text: async (url) => (await check(await fetch(url, { headers: headersFor(url) }), url)).text(),
-  postJson: async (url, body) => (await check(await fetch(url, {
+  json: async (url) => (await check(await fetchRetry(url, { headers: headersFor(url) }), url)).json(),
+  text: async (url) => (await check(await fetchRetry(url, { headers: headersFor(url) }), url)).text(),
+  postJson: async (url, body) => (await check(await fetchRetry(url, {
     method: 'POST', headers: headersFor(url, { 'Content-Type': 'application/json' }), body: JSON.stringify(body)
   }), url)).json()
 };

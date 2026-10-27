@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). From 1.26.3, versions read
 **major.year.release**: 1.26.3 is the third release of 2026 (after 1.10.26 and 1.10.2026.1).
 
+## Unreleased
+
+### Fixed
+- Nightly import: when Scryfall answers "too many requests" (the GitHub runners share their IP addresses), the
+  importer waits and tries again, up to three times, instead of skipping the colors of the newest cards.
+
 ## [1.26.3] - 2026-10-27
 
 ### Deck focus
