@@ -75,7 +75,7 @@ server for 7 days.
 ### Automatically, every night
 
 The repository includes a GitHub Actions workflow, [`.github/workflows/sync.yml`](../.github/workflows/sync.yml). It
-runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:30 UTC. The importer does what
+runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:30 UTC, and again at 18:45 UTC to catch up when GitHub skips a run. The importer does what
 **Import selected** does, with your house rules and aliases, and saves the events through the plugin's REST API.
 
 1. In WordPress, open **Users → Profile → Application Passwords**, type a name such as `MTG Stats sync`, click
@@ -96,8 +96,9 @@ runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:3
    | `MTGSTATS_REST` | `<site>/wp-json/mtgstats/v1` | REST address, for sites without pretty permalinks: `<site>/?rest_route=/mtgstats/v1` |
 
 4. Open **Actions → Sync tournaments → Run workflow**. Tick *dry run* the first time: the log lists what would be
-   imported, without saving anything. GitHub starts the nightly runs only once the workflow is on the repository's
-   default branch.
+   imported, without saving anything. GitHub starts the scheduled runs only once the workflow is on the repository's
+   default branch. Scheduled runs are not guaranteed: in the first days, or when GitHub is busy, they can be late
+   or skipped. The evening run catches up, and you can always start one by hand.
 
 Leagues are left out by default. Their 5-0 lists would inflate every win rate on the Metagame, Matchups and
 Positioning tabs. The deck focus tab handles them separately (see [Deck focus](#deck-focus)), so import them only if

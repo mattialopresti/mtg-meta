@@ -1,4 +1,6 @@
 # Imports the new tournaments into a WordPress site running MTG Stats, every night.
+# GitHub does not guarantee scheduled runs (they can be late or skipped, especially in a workflow's first days),
+# so a second run in the evening catches up. Events already on the site are skipped, so extra runs are harmless.
 # Setup (repository Settings → Secrets and variables → Actions):
 #   variable MTGSTATS_URL           the site address, e.g. https://example.com
 #   secret   MTGSTATS_USER          a WordPress administrator
@@ -11,6 +13,7 @@ name: Sync tournaments
 on:
   schedule:
     - cron: '30 6 * * *'
+    - cron: '45 18 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

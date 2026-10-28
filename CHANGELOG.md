@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Fro
 ### Fixed
 - Nightly import: when Scryfall answers "too many requests" (the GitHub runners share their IP addresses), the
   importer waits and tries again, up to three times, instead of skipping the colors of the newest cards.
+- Nightly import: a second daily run at 18:45 UTC catches up when GitHub skips the 06:30 run, which happens with
+  scheduled workflows.
 
 ## [1.26.3] - 2026-10-27
 
