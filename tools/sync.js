@@ -61,13 +61,32 @@ function headersFor(url, extra) {
   return h;
 }
 
-// Scryfall answers 429 when the runner's shared IP has made many requests: wait and try again a few times
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Node only says "fetch failed": the useful part (ECONNRESET, ENOTFOUND, timeout, certificate…) is in the cause
+function networkError(e, url) {
+  const c = e && e.cause;
+  const detail = c ? [c.code, c.message].filter(Boolean).join(' ') : '';
+  return new Error(`cannot reach ${new URL(url).host}${detail ? ` (${detail})` : ''}`);
+}
+
+// Retries network errors (a host or firewall briefly refusing the runner) and Scryfall's 429, which comes when the
+// runner's shared IP has made many requests
 async function fetchRetry(url, init) {
   for (let attempt = 0; ; attempt++) {
-    const r = await fetch(url, init);
+    let r;
+    try {
+      r = await fetch(url, Object.assign({ signal: AbortSignal.timeout(60000) }, init));
+    } catch (e) {
+      const err = networkError(e, url);
+      if (attempt >= 3) throw err;
+      log(`  ${err.message}: retrying in ${5 * 3 ** attempt} s`);
+      await sleep(5000 * 3 ** attempt);
+      continue;
+    }
     if (r.status !== 429 || attempt >= 3 || !/api\.scryfall\.com/.test(url)) return r;
     const wait = (parseInt(r.headers.get('retry-after'), 10) || 2 ** attempt) * 1000;
-    await new Promise((res) => setTimeout(res, Math.min(wait, 10000)));
+    await sleep(Math.min(wait, 10000));
   }
 }
 
@@ -83,7 +102,8 @@ const AUTH = `Basic ${Buffer.from(`${USER}:${PASS}`).toString('base64')}`;
 
 async function wp(method, route, body) {
   const url = `${REST}${route}`;
-  const r = await fetch(url, {
+  // Saving a tournament twice is harmless (same id), so retrying a request that may have reached the site is safe
+  const r = await fetchRetry(url, {
     method,
     headers: { Authorization: AUTH, 'Content-Type': 'application/json', 'User-Agent': UA },
     body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body))

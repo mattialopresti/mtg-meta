@@ -9,6 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Fro
 ### Fixed
 - Nightly import: when Scryfall answers "too many requests" (the GitHub runners share their IP addresses), the
   importer waits and tries again, up to three times, instead of skipping the colors of the newest cards.
+- Nightly import: network errors ("fetch failed") are retried three times, with pauses of 5, 15 and 45 seconds, and
+  the log now names the cause (refused connection, timeout, DNS, certificate).
+- Nightly import: the workflow uses actions/checkout and actions/setup-node v5 on Node 24 (Node 20 is deprecated on
+  GitHub runners).
 - Nightly import: a second daily run at 18:45 UTC catches up when GitHub skips the 06:30 run, which happens with
   scheduled workflows.
 
