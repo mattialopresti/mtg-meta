@@ -75,7 +75,8 @@ server for 7 days.
 ### Automatically, every night
 
 The repository includes a GitHub Actions workflow, [`.github/workflows/sync.yml`](../.github/workflows/sync.yml). It
-runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:30 UTC, and again at 18:45 UTC to catch up when GitHub skips a run. The importer does what
+runs the headless importer [`tools/sync.js`](../tools/sync.js) four times a day (00:30, 06:30, 12:30 and 18:45 UTC): GitHub can delay or skip scheduled runs, and some hosting
+firewalls drop part of the GitHub runners' addresses, so each run catches up on what the previous ones missed. The importer does what
 **Import selected** does, with your house rules and aliases, and saves the events through the plugin's REST API.
 
 1. In WordPress, open **Users → Profile → Application Passwords**, type a name such as `MTG Stats sync`, click
@@ -99,6 +100,11 @@ runs the headless importer [`tools/sync.js`](../tools/sync.js) every day at 06:3
    imported, without saving anything. GitHub starts the scheduled runs only once the workflow is on the repository's
    default branch. Scheduled runs are not guaranteed: in the first days, or when GitHub is busy, they can be late
    or skipped. The evening run catches up, and you can always start one by hand.
+
+If a run fails with **cannot reach** your site (`ETIMEDOUT` or `UND_ERR_CONNECT_TIMEOUT`), the hosting firewall
+dropped the connection from that GitHub server. The log shows the server's address: if it keeps happening, send a
+few of them to your host's support and ask whether their firewall blocks GitHub Actions (Microsoft Azure) addresses.
+Runs that do get through import everything that was missed.
 
 Leagues are left out by default. Their 5-0 lists would inflate every win rate on the Metagame, Matchups and
 Positioning tabs. The deck focus tab handles them separately (see [Deck focus](#deck-focus)), so import them only if

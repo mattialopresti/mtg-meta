@@ -65,9 +65,13 @@ const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 // Node only says "fetch failed": the useful part (ECONNRESET, ENOTFOUND, timeout, certificate…) is in the cause
 function networkError(e, url) {
-  const c = e && e.cause;
-  const detail = c ? [c.code, c.message].filter(Boolean).join(' ') : '';
-  return new Error(`cannot reach ${new URL(url).host}${detail ? ` (${detail})` : ''}`);
+  const c = (e && e.cause) || {};
+  // With both IPv4 and IPv6 addresses, Node tries each and reports them together (AggregateError)
+  const tried = (c.errors || [c]).map((x) => [x.code, x.address].filter(Boolean).join(' ')).filter(Boolean);
+  const detail = tried.length ? tried.join(', ') : c.message || '';
+  const err = new Error(`cannot reach ${new URL(url).host}${detail ? ` (${detail})` : ''}`);
+  err.network = true;
+  return err;
 }
 
 // Retries network errors (a host or firewall briefly refusing the runner) and Scryfall's 429, which comes when the
@@ -262,4 +266,14 @@ async function main() {
   if (batch.length && !ok) process.exit(1);
 }
 
-main().catch((e) => { console.error(`Sync failed: ${e.message}`); process.exit(1); });
+main().catch(async (e) => {
+  console.error(`Sync failed: ${e.message}`);
+  if (e.network) {
+    // The address this runner goes out from, for the host's support when its firewall drops the connection
+    try {
+      const ip = await (await fetch('https://api.ipify.org', { signal: AbortSignal.timeout(10000) })).text();
+      console.error(`  this runner's public address: ${ip.trim()}`);
+    } catch (x) { /* not essential */ }
+  }
+  process.exit(1);
+});

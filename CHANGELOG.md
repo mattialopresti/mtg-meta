@@ -13,8 +13,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Fro
   the log now names the cause (refused connection, timeout, DNS, certificate).
 - Nightly import: the workflow uses actions/checkout and actions/setup-node v5 on Node 24 (Node 20 is deprecated on
   GitHub runners).
-- Nightly import: a second daily run at 18:45 UTC catches up when GitHub skips the 06:30 run, which happens with
-  scheduled workflows.
+- Nightly import: four daily runs (00:30, 06:30, 12:30, 18:45 UTC). GitHub can delay or skip scheduled runs, and
+  some hosting firewalls drop part of the GitHub runners' addresses; each run catches up on what was missed.
+- Nightly import: when the site cannot be reached, the log lists the addresses tried and the runner's public
+  address, to report to the host.
 
 ## [1.26.3] - 2026-10-27
 
